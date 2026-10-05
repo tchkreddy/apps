@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="128" fill="#0B0E14"/>
+  <circle cx="256" cy="256" r="180" fill="#161B22" stroke="#30363D" stroke-width="8"/>
+  <circle cx="256" cy="256" r="130" fill="#238636" opacity="0.15"/>
+  <!-- Walkie-talkie / Mic Icon -->
+  <path d="M256,310 C280.3,310 300,290.3 300,266 L300,170 C300,145.7 280.3,126 256,126 C231.7,126 212,145.7 212,170 L212,266 C212,290.3 231.7,310 256,310 Z" fill="#2EA043"/>
+  <path d="M336,256 C336,300.2 300.2,336 256,336 C211.8,336 176,300.2 176,256 L152,256 C152,308 190.4,351 240,358.4 L240,396 L272,396 L272,358.4 C321.6,351 360,308 360,256 L336,256 Z" fill="#3FB950"/>
+  <!-- Antenna waves -->
+  <path d="M210,90 C238,76 274,76 302,90" fill="none" stroke="#58A6FF" stroke-width="12" stroke-linecap="round"/>
+  <path d="M185,60 C228,40 284,40 327,60" fill="none" stroke="#58A6FF" stroke-width="12" stroke-linecap="round" opacity="0.6"/>
+</svg>

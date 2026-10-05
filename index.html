@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0B0E14">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Home Intercom</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background: #0B0E14;
+      color: #F0F6FC;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+
+    /* Top App Bar */
+    header {
+      padding: 20px 24px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1E232B;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #F0F6FC;
+    }
+
+    .room-badge {
+      background: #161B22;
+      border: 1px solid #30363D;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      color: #8B949E;
+      font-weight: 600;
+    }
+
+    .settings-btn {
+      background: #161B22;
+      border: 1px solid #30363D;
+      color: #8B949E;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    /* Status Bar */
+    .status-container {
+      padding: 16px 24px 0;
+      text-align: center;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #161B22;
+      border: 1px solid #30363D;
+      transition: all 0.3s ease;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #8B949E;
+      transition: background 0.3s ease;
+    }
+
+    .status-pill.connecting .dot { background: #D29922; }
+    .status-pill.connected .dot { background: #3FB950; box-shadow: 0 0 8px #3FB950; }
+    .status-pill.transmitting .dot { background: #F85149; box-shadow: 0 0 10px #F85149; }
+    .status-pill.receiving .dot { background: #58A6FF; box-shadow: 0 0 10px #58A6FF; }
+
+    /* Audio Unlock Banner (for mobile browser policy) */
+    #audio-unlock-banner {
+      background: #D29922;
+      color: #0B0E14;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      padding: 8px 16px;
+      cursor: pointer;
+      display: none;
+    }
+
+    /* Main Stage */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 20px;
+    }
+
+    /* Pulse Rings */
+    .pulse-ring {
+      position: absolute;
+      width: 250px;
+      height: 250px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      pointer-events: none;
+      transition: all 0.2s ease;
+    }
+
+    .pulse-ring.active-tx {
+      border-color: #2EA043;
+      background: rgba(46, 160, 67, 0.08);
+      animation: pulseAnim 1.4s infinite ease-out;
+    }
+
+    .pulse-ring.active-rx {
+      border-color: #58A6FF;
+      background: rgba(88, 166, 255, 0.08);
+      animation: pulseAnim 1.4s infinite ease-out;
+    }
+
+    @keyframes pulseAnim {
+      0% { transform: scale(0.95); opacity: 0.9; }
+      100% { transform: scale(1.4); opacity: 0; }
+    }
+
+    /* Push-to-Talk Big Button */
+    .ptt-btn {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: #161B22;
+      border: 4px solid #30363D;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: #8B949E;
+      cursor: pointer;
+      position: relative;
+      z-index: 2;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+      transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      outline: none;
+    }
+
+    .ptt-btn svg {
+      width: 56px;
+      height: 56px;
+      fill: #8B949E;
+      transition: all 0.2s ease;
+    }
+
+    .ptt-btn .btn-label {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* PTT Pressed / Active Transmitting */
+    .ptt-btn.transmitting {
+      background: #238636;
+      border-color: #3FB950;
+      color: #FFFFFF;
+      transform: scale(0.96);
+      box-shadow: 0 0 40px rgba(63, 185, 80, 0.5);
+    }
+
+    .ptt-btn.transmitting svg {
+      fill: #FFFFFF;
+    }
+
+    /* Receiving from Other Phone */
+    .ptt-btn.receiving {
+      background: #1F3B58;
+      border-color: #58A6FF;
+      color: #58A6FF;
+      box-shadow: 0 0 35px rgba(88, 166, 255, 0.4);
+    }
+
+    .ptt-btn.receiving svg {
+      fill: #58A6FF;
+    }
+
+    /* Subtitle state */
+    .state-desc {
+      margin-top: 36px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #8B949E;
+      letter-spacing: 0.5px;
+      text-align: center;
+      min-height: 20px;
+    }
+
+    /* Audio Meter Bar */
+    .meter-container {
+      width: 180px;
+      height: 4px;
+      background: #21262D;
+      border-radius: 2px;
+      margin-top: 14px;
+      overflow: hidden;
+    }
+
+    .meter-bar {
+      height: 100%;
+      width: 0%;
+      background: #3FB950;
+      transition: width 0.05s ease;
+    }
+
+    /* Bottom Control Deck */
+    footer {
+      padding: 16px 24px 32px;
+      background: #11141B;
+      border-top: 1px solid #1E232B;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: #161B22;
+      border: 1px solid #30363D;
+      border-radius: 12px;
+    }
+
+    .toggle-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .toggle-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #F0F6FC;
+    }
+
+    .toggle-subtitle {
+      font-size: 11px;
+      color: #8B949E;
+    }
+
+    /* Switch Style */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #30363D;
+      transition: .3s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: #238636;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    /* Settings Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 100;
+    }
+
+    .modal-card {
+      background: #161B22;
+      border: 1px solid #30363D;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 360px;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    }
+
+    .modal-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #F0F6FC;
+    }
+
+    .modal-subtitle {
+      font-size: 12px;
+      color: #8B949E;
+      margin-bottom: 20px;
+      line-height: 1.4;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8B949E;
+      margin-bottom: 6px;
+    }
+
+    .form-input {
+      width: 100%;
+      background: #0B0E14;
+      border: 1px solid #30363D;
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #F0F6FC;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .form-input:focus {
+      border-color: #58A6FF;
+    }
+
+    .role-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .role-btn {
+      background: #0B0E14;
+      border: 2px solid #30363D;
+      border-radius: 8px;
+      padding: 12px 8px;
+      color: #F0F6FC;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+    }
+
+    .role-btn.selected {
+      border-color: #238636;
+      background: #112717;
+      color: #3FB950;
+    }
+
+    .modal-save-btn {
+      width: 100%;
+      background: #238636;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Audio Unlock Required by Mobile Browsers -->
+  <div id="audio-unlock-banner">
+    🔊 Tap here to enable audio on this device
+  </div>
+
+  <header>
+    <div class="brand">
+      <h1>Intercom</h1>
+      <span id="room-badge" class="room-badge">Room: home</span>
+    </div>
+    <button id="btn-settings" class="settings-btn" title="Settings">⚙️</button>
+  </header>
+
+  <div class="status-container">
+    <div id="status-pill" class="status-pill connecting">
+      <span class="dot"></span>
+      <span id="status-text">Starting up...</span>
+    </div>
+  </div>
+
+  <main>
+    <div id="pulse-ring" class="pulse-ring"></div>
+
+    <button id="ptt-btn" class="ptt-btn">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+      </svg>
+      <span id="btn-label" class="btn-label">HOLD TO TALK</span>
+    </button>
+
+    <div id="state-desc" class="state-desc">Ready on Wi-Fi</div>
+    <div class="meter-container">
+      <div id="meter-bar" class="meter-bar"></div>
+    </div>
+  </main>
+
+  <footer>
+    <!-- 2-Way Hands-Free Intercom Toggle -->
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <span class="toggle-title">2-Way Open Intercom</span>
+        <span class="toggle-subtitle">Keep audio open both ways continuously</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggle-twoway">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- Screen Wake Lock -->
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <span class="toggle-title">Keep Screen Awake</span>
+        <span class="toggle-subtitle">Prevents sleep while on nightstand/counter</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggle-wakelock">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </footer>
+
+  <!-- Setup Modal (First Time Visit) -->
+  <div id="setup-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-title">Device Setup</div>
+      <div class="modal-subtitle">Set once for this phone. Both phones must have the exact same Room Key.</div>
+
+      <div class="form-group">
+        <label class="form-label">Private Room Key</label>
+        <input id="input-room" class="form-input" type="text" placeholder="e.g. sweet_home" value="home">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Which phone is this?</label>
+        <div class="role-buttons">
+          <div id="role-p1" class="role-btn selected">Phone 1<br><small>(My Phone)</small></div>
+          <div id="role-p2" class="role-btn">Phone 2<br><small>(Wife's Phone)</small></div>
+        </div>
+      </div>
+
+      <button id="btn-save-setup" class="modal-save-btn">Save & Connect</button>
+    </div>
+  </div>
+
+  <!-- Hidden Audio Element for Incoming Sound -->
+  <audio id="remote-audio" autoplay playsinline></audio>
+
+  <script>
+    // State
+    let roomKey = 'home';
+    let myRole = 'p1';       // 'p1' or 'p2'
+    let otherRole = 'p2';
+    let peer = null;
+    let currentCall = null;
+    let localStream = null;
+    let isTransmitting = false;
+    let isTwoWayMode = false;
+    let isReceiving = false;
+    let wakeLockSentinel = null;
+    let audioContext = null;
+    let analyser = null;
+    let reconnectTimer = null;
+
+    // Elements
+    const pttBtn = document.getElementById('ptt-btn');
+    const btnLabel = document.getElementById('btn-label');
+    const statusPill = document.getElementById('status-pill');
+    const statusText = document.getElementById('status-text');
+    const stateDesc = document.getElementById('state-desc');
+    const pulseRing = document.getElementById('pulse-ring');
+    const meterBar = document.getElementById('meter-bar');
+    const roomBadge = document.getElementById('room-badge');
+    const toggleTwoWay = document.getElementById('toggle-twoway');
+    const toggleWakeLock = document.getElementById('toggle-wakelock');
+    const remoteAudio = document.getElementById('remote-audio');
+    const setupModal = document.getElementById('setup-modal');
+    const inputRoom = document.getElementById('input-room');
+    const roleP1 = document.getElementById('role-p1');
+    const roleP2 = document.getElementById('role-p2');
+    const btnSaveSetup = document.getElementById('btn-save-setup');
+    const btnSettings = document.getElementById('btn-settings');
+    const unlockBanner = document.getElementById('audio-unlock-banner');
+
+    // 1. URL Hash & Storage Loading
+    function loadConfig() {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+
+      const hashRoom = params.get('room');
+      const hashRole = params.get('role');
+
+      if (hashRoom && hashRole) {
+        roomKey = hashRoom.trim().toLowerCase();
+        myRole = hashRole.trim().toLowerCase();
+        localStorage.setItem('intercom_room', roomKey);
+        localStorage.setItem('intercom_role', myRole);
+      } else {
+        const storedRoom = localStorage.getItem('intercom_room');
+        const storedRole = localStorage.getItem('intercom_role');
+        if (storedRoom && storedRole) {
+          roomKey = storedRoom;
+          myRole = storedRole;
+        } else {
+          // First visit: show setup modal
+          showSetupModal();
+          return false;
+        }
+      }
+
+      otherRole = (myRole === 'p1') ? 'p2' : 'p1';
+      roomBadge.textContent = `${roomKey} • ${myRole === 'p1' ? 'Phone 1' : 'Phone 2'}`;
+      return true;
+    }
+
+    function showSetupModal() {
+      inputRoom.value = localStorage.getItem('intercom_room') || 'home';
+      selectRole(localStorage.getItem('intercom_role') || 'p1');
+      setupModal.style.display = 'flex';
+    }
+
+    function selectRole(role) {
+      if (role === 'p1') {
+        roleP1.classList.add('selected');
+        roleP2.classList.remove('selected');
+      } else {
+        roleP2.classList.add('selected');
+        roleP1.classList.remove('selected');
+      }
+    }
+
+    roleP1.onclick = () => selectRole('p1');
+    roleP2.onclick = () => selectRole('p2');
+
+    btnSaveSetup.onclick = () => {
+      const room = inputRoom.value.trim().toLowerCase() || 'home';
+      const role = roleP1.classList.contains('selected') ? 'p1' : 'p2';
+      localStorage.setItem('intercom_room', room);
+      localStorage.setItem('intercom_role', role);
+      window.location.hash = `#room=${room}&role=${role}`;
+      setupModal.style.display = 'none';
+      initApp();
+    };
+
+    btnSettings.onclick = () => showSetupModal();
+
+    // 2. Audio Effects (Radio squelch & beeps)
+    function playBeep(type) {
+      try {
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
+
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+
+        const now = audioContext.currentTime;
+        if (type === 'start') {
+          // Two-tone rising radio chirp
+          osc.frequency.setValueAtTime(880, now);
+          osc.frequency.setValueAtTime(1760, now + 0.04);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+          osc.start(now);
+          osc.stop(now + 0.09);
+        } else if (type === 'stop') {
+          // Roger beep
+          osc.frequency.setValueAtTime(1200, now);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+          osc.start(now);
+          osc.stop(now + 0.05);
+        }
+      } catch (e) {
+        console.warn('Audio effect error:', e);
+      }
+    }
+
+    // 3. Audio & WebRTC Pipeline
+    async function setupLocalAudio() {
+      if (localStream) return localStream;
+
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: false
+        });
+
+        // Start muted by default
+        localStream.getAudioTracks().forEach(track => track.enabled = false);
+
+        // Setup analyser for audio meter
+        try {
+          if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          }
+          const source = audioContext.createMediaStreamSource(localStream);
+          analyser = audioContext.createAnalyser();
+          analyser.fftSize = 64;
+          source.connect(analyser);
+          startMeterLoop();
+        } catch (e) {
+          console.warn('Analyser setup skipped', e);
+        }
+
+        return localStream;
+      } catch (err) {
+        console.error('Microphone permission error:', err);
+        stateDesc.textContent = '⚠️ Mic permission required';
+        return null;
+      }
+    }
+
+    function startMeterLoop() {
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      function update() {
+        if (isTransmitting || isReceiving) {
+          analyser.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+          let avg = sum / dataArray.length;
+          let percent = Math.min(100, Math.round((avg / 128) * 100));
+          meterBar.style.width = percent + '%';
+        } else {
+          meterBar.style.width = '0%';
+        }
+        requestAnimationFrame(update);
+      }
+      update();
+    }
+
+    function initPeer() {
+      if (peer) {
+        try { peer.destroy(); } catch (e) {}
+      }
+
+      const myId = `${roomKey}_${myRole}`;
+      const targetId = `${roomKey}_${otherRole}`;
+
+      updateStatus('connecting', 'Connecting...');
+
+      peer = new Peer(myId, {
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        }
+      });
+
+      peer.on('open', (id) => {
+        console.log('Peer connected with ID:', id);
+        updateStatus('connecting', `Online • Waiting for ${otherRole === 'p1' ? 'Phone 1' : 'Phone 2'}...`);
+        tryConnectToPeer();
+      });
+
+      peer.on('call', (call) => {
+        console.log('Incoming call from peer:', call.peer);
+        currentCall = call;
+        call.answer(localStream);
+
+        call.on('stream', (remoteStream) => {
+          console.log('Received remote audio stream');
+          remoteAudio.srcObject = remoteStream;
+          remoteAudio.play().catch(() => {
+            unlockBanner.style.display = 'block';
+          });
+          onPeerConnected();
+        });
+
+        call.on('close', () => {
+          onPeerDisconnected();
+        });
+      });
+
+      peer.on('error', (err) => {
+        console.warn('PeerJS warning/error:', err.type);
+        if (err.type === 'peer-unavailable') {
+          updateStatus('connecting', `Waiting for ${otherRole === 'p1' ? 'Phone 1' : 'Phone 2'}...`);
+        }
+      });
+
+      // Auto-reconnect poll
+      if (reconnectTimer) clearInterval(reconnectTimer);
+      reconnectTimer = setInterval(() => {
+        if (!currentCall || !currentCall.open) {
+          tryConnectToPeer();
+        }
+      }, 4000);
+    }
+
+    function tryConnectToPeer() {
+      if (!peer || peer.disconnected || !localStream) return;
+      if (currentCall && currentCall.open) return;
+
+      const targetId = `${roomKey}_${otherRole}`;
+      // P1 initiates call to P2
+      if (myRole === 'p1') {
+        console.log('Initiating connection to:', targetId);
+        const call = peer.call(targetId, localStream);
+        if (!call) return;
+
+        currentCall = call;
+        call.on('stream', (remoteStream) => {
+          remoteAudio.srcObject = remoteStream;
+          remoteAudio.play().catch(() => {
+            unlockBanner.style.display = 'block';
+          });
+          onPeerConnected();
+        });
+
+        call.on('close', () => {
+          onPeerDisconnected();
+        });
+      }
+    }
+
+    function onPeerConnected() {
+      updateStatus('connected', `Connected to ${otherRole === 'p1' ? 'Phone 1' : 'Phone 2'} (Wi-Fi)`);
+      stateDesc.textContent = isTwoWayMode ? '2-Way Intercom Live' : 'Ready (Hold button to speak)';
+    }
+
+    function onPeerDisconnected() {
+      currentCall = null;
+      updateStatus('connecting', `Waiting for ${otherRole === 'p1' ? 'Phone 1' : 'Phone 2'}...`);
+      stateDesc.textContent = 'Reconnecting on Wi-Fi...';
+    }
+
+    function updateStatus(stateClass, text) {
+      statusPill.className = `status-pill ${stateClass}`;
+      statusText.textContent = text;
+    }
+
+    // 4. Transmission Controls (PTT & 2-Way)
+    function startTransmitting() {
+      if (isTransmitting) return;
+      isTransmitting = true;
+
+      if (navigator.vibrate) navigator.vibrate(35);
+      playBeep('start');
+
+      if (localStream) {
+        localStream.getAudioTracks().forEach(track => track.enabled = true);
+      }
+
+      pttBtn.classList.add('transmitting');
+      pulseRing.className = 'pulse-ring active-tx';
+      btnLabel.textContent = 'TRANSMITTING';
+      stateDesc.textContent = '🔴 Speaking Live...';
+      updateStatus('transmitting', 'Broadcasting Voice');
+    }
+
+    function stopTransmitting() {
+      if (!isTransmitting) return;
+      isTransmitting = false;
+
+      playBeep('stop');
+
+      if (!isTwoWayMode && localStream) {
+        localStream.getAudioTracks().forEach(track => track.enabled = false);
+      }
+
+      pttBtn.classList.remove('transmitting');
+      pulseRing.className = 'pulse-ring';
+      btnLabel.textContent = isTwoWayMode ? 'INTERCOM ON' : 'HOLD TO TALK';
+      stateDesc.textContent = isTwoWayMode ? '2-Way Intercom Live' : 'Ready (Hold button to speak)';
+
+      if (currentCall && currentCall.open) {
+        updateStatus('connected', `Connected to ${otherRole === 'p1' ? 'Phone 1' : 'Phone 2'}`);
+      } else {
+        updateStatus('connecting', 'Waiting for other phone...');
+      }
+    }
+
+    // PTT Pointer Events (Works smoothly on iOS, Android, and Desktop)
+    pttBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (!isTwoWayMode) {
+        startTransmitting();
+      }
+    });
+
+    window.addEventListener('pointerup', () => {
+      if (!isTwoWayMode && isTransmitting) {
+        stopTransmitting();
+      }
+    });
+
+    window.addEventListener('pointercancel', () => {
+      if (!isTwoWayMode && isTransmitting) {
+        stopTransmitting();
+      }
+    });
+
+    // 5. 2-Way Intercom Mode Toggle
+    toggleTwoWay.addEventListener('change', (e) => {
+      isTwoWayMode = e.target.checked;
+      if (isTwoWayMode) {
+        startTransmitting();
+        btnLabel.textContent = 'INTERCOM ON';
+        stateDesc.textContent = '2-Way Intercom Live';
+      } else {
+        stopTransmitting();
+        btnLabel.textContent = 'HOLD TO TALK';
+        stateDesc.textContent = 'Ready (Hold button to speak)';
+      }
+    });
+
+    // 6. Screen Wake Lock
+    toggleWakeLock.addEventListener('change', async (e) => {
+      if (e.target.checked) {
+        try {
+          if ('wakeLock' in navigator) {
+            wakeLockSentinel = await navigator.wakeLock.request('screen');
+            wakeLockSentinel.addEventListener('release', () => {
+              toggleWakeLock.checked = false;
+            });
+          }
+        } catch (err) {
+          console.warn('Wake Lock error:', err);
+          toggleWakeLock.checked = false;
+        }
+      } else {
+        if (wakeLockSentinel) {
+          wakeLockSentinel.release();
+          wakeLockSentinel = null;
+        }
+      }
+    });
+
+    // Unlock banner click
+    unlockBanner.addEventListener('click', () => {
+      remoteAudio.play();
+      if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+      unlockBanner.style.display = 'none';
+    });
+
+    // 7. Initialize Application
+    async function initApp() {
+      const ready = loadConfig();
+      if (!ready) return;
+
+      await setupLocalAudio();
+      initPeer();
+    }
+
+    // Register Service Worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(console.warn);
+    }
+
+    // Start
+    window.addEventListener('DOMContentLoaded', () => {
+      initApp();
+    });
+  </script>
+</body>
+</html>
