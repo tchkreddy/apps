@@ -8,15 +8,19 @@
  *   ✅ RCHistoryReport — read-only recharge history
  *   ❌ MeterStatus — NEVER CALLED (can trigger on/off)
  *   ❌ Any POST / write / command:"update" — NEVER called
+ *
+ * ACCESS CONTROL:
+ *   The Apps Script proxy requires a secret passed as ?secret=<token>.
+ *   The token is read from the URL hash: bookmark the URL with #yourSecret.
+ *   The hash never leaves the browser and is not in source control.
  */
 
 // ── Config ────────────────────────────────────────────
-// All API calls go through the local safety proxy (proxy.py).
-// The proxy enforces the read-only whitelist and adds CORS headers.
-// Run:  python3 proxy.py        (starts on port 8099)
-
-const PROXY_URL = 'https://script.google.com/macros/s/AKfycbzMkvnwPWKb4cttij712tL1vNiio2L9bue9S2nQZeA23HVsgZsxsn4R43ayMKzLf9gl/exec';
-const FLAT      = 'B401';
+const PROXY_URL     = 'https://script.google.com/macros/s/AKfycbzMkvnwPWKb4cttij712tL1vNiio2L9bue9S2nQZeA23HVsgZsxsn4R43ayMKzLf9gl/exec';
+const FLAT          = 'B401';
+// Secret lives in the URL hash — e.g. bookmark: .../elmeasure/#mySecret
+// Never stored in source code, never sent to GitHub.
+const ACCESS_SECRET = location.hash.replace(/^#/, '');
 const EB_TARIFF_FALLBACK  = 8.45;
 const DG_TARIFF_FALLBACK  = 32.0;
 
@@ -61,20 +65,29 @@ function showToast(msg, duration = 2500) {
 }
 
 /**
- * Safe GET — routes through local proxy which enforces the read-only whitelist.
- * Proxy additionally blocks MeterStatus and command:"update".
+ * Safe GET — routes through the Apps Script proxy.
+ * Proxy enforces read-only whitelist + ACCESS_SECRET gate.
  */
 async function safeGet(taskid, params) {
   const ALLOWED = ['GetOnlineData', 'GetFromMonthlyBill', 'RCHistoryReport'];
   if (!ALLOWED.includes(taskid)) {
     throw new Error(`BLOCKED client-side: taskid "${taskid}" is not on the safe list.`);
   }
+  if (!ACCESS_SECRET) {
+    const err = new Error('No access secret — open the app via your private bookmarked URL.');
+    err.isUnauthorized = true;
+    throw err;
+  }
   const param = encodeURIComponent(JSON.stringify({ taskid, params }));
-  const url   = `${PROXY_URL}?param=${param}`;
+  const url   = `${PROXY_URL}?secret=${encodeURIComponent(ACCESS_SECRET)}&param=${param}`;
   const r = await fetch(url, { method: 'GET' });
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
-    throw new Error(body.error || `HTTP ${r.status}`);
+    const err = new Error(body.error || `HTTP ${r.status}`);
+    if (r.status === 403 || (body.error || '').toLowerCase().includes('unauthorized')) {
+      err.isUnauthorized = true;
+    }
+    throw err;
   }
   return r.json();
 }
@@ -121,6 +134,10 @@ async function loadLive() {
     $liveStatus.textContent = 'Live';
     $liveTime.textContent = fmtTime();
   } catch (e) {
+    if (e.isUnauthorized) {
+      showLockScreen('Wrong or missing access secret. Check your bookmarked URL.');
+      return;
+    }
     $liveDot.className = 'status-dot err';
     $liveStatus.textContent = 'Error — tap ↻';
     console.error('loadLive:', e);
@@ -637,6 +654,12 @@ function escHtml(str) {
 
 // ── Init ──────────────────────────────────────────────
 async function init() {
+  // Guard: if no secret in URL hash, show lock screen and stop
+  if (!ACCESS_SECRET) {
+    showLockScreen('Open the app via your private bookmarked URL (with #secret).');
+    return;
+  }
+
   initTabs();
 
   $refresh.addEventListener('click', () => {
@@ -650,6 +673,19 @@ async function init() {
 
   // Auto-refresh every 60 seconds
   scheduleAutoRefresh();
+}
+
+/** Full-page lock screen shown when secret is missing or rejected */
+function showLockScreen(msg) {
+  document.body.innerHTML = `
+    <div style="
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      min-height:100dvh;background:#0d1117;color:#e6edf3;font-family:system-ui,sans-serif;
+      padding:24px;text-align:center;gap:16px">
+      <div style="font-size:3rem">🔒</div>
+      <div style="font-size:1.1rem;font-weight:600">Access Restricted</div>
+      <div style="color:#8b949e;font-size:0.85rem;max-width:280px;line-height:1.5">${msg}</div>
+    </div>`;
 }
 
 function scheduleAutoRefresh() {
