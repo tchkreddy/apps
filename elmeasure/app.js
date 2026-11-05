@@ -16,11 +16,23 @@
  */
 
 // ── Config ────────────────────────────────────────────
-const PROXY_URL     = 'https://script.google.com/macros/s/AKfycbzMkvnwPWKb4cttij712tL1vNiio2L9bue9S2nQZeA23HVsgZsxsn4R43ayMKzLf9gl/exec';
-const FLAT          = 'B401';
-// Secret lives in the URL hash — e.g. bookmark: .../elmeasure/#mySecret
-// Never stored in source code, never sent to GitHub.
-const ACCESS_SECRET = location.hash.replace(/^#/, '');
+const PROXY_URL = 'https://script.google.com/macros/s/AKfycbzMkvnwPWKb4cttij712tL1vNiio2L9bue9S2nQZeA23HVsgZsxsn4R43ayMKzLf9gl/exec';
+const FLAT      = 'B401';
+const LS_KEY    = 'em_secret';
+
+// Secret resolution order:
+//   1. URL hash  → save to localStorage (seeds the installed PWA)
+//   2. localStorage (used by every home-screen launch after the first)
+//   3. Neither   → show lock screen
+(function seedSecret() {
+  const fromHash = location.hash.replace(/^#/, '');
+  if (fromHash) {
+    localStorage.setItem(LS_KEY, fromHash);
+    // Strip hash from URL bar without reload (cosmetic)
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+})();
+const ACCESS_SECRET = localStorage.getItem(LS_KEY) || '';
 const EB_TARIFF_FALLBACK  = 8.45;
 const DG_TARIFF_FALLBACK  = 32.0;
 
@@ -135,7 +147,9 @@ async function loadLive() {
     $liveTime.textContent = fmtTime();
   } catch (e) {
     if (e.isUnauthorized) {
-      showLockScreen('Wrong or missing access secret. Check your bookmarked URL.');
+      // Clear bad cached secret so user can re-seed via URL
+      localStorage.removeItem(LS_KEY);
+      showLockScreen('Wrong access secret. Clear your browser data and re-open via your private bookmarked URL.');
       return;
     }
     $liveDot.className = 'status-dot err';
@@ -656,7 +670,7 @@ function escHtml(str) {
 async function init() {
   // Guard: if no secret in URL hash, show lock screen and stop
   if (!ACCESS_SECRET) {
-    showLockScreen('Open the app via your private bookmarked URL (with #secret).');
+    showLockScreen('Open the app via your private bookmarked URL (with #secret).<br><br>Once opened with the secret, the installed app will remember it.');
     return;
   }
 
