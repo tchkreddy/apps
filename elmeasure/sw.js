@@ -4,7 +4,7 @@
  * Live data always fetched fresh (no caching of API responses).
  */
 
-const CACHE_NAME = 'b401-meter-v10';
+const CACHE_NAME = 'b401-meter-v11';
 const SHELL_ASSETS = [
   './',
   './index.html',

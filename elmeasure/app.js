@@ -149,15 +149,22 @@ function onFlatBadgeClick() {
         FLAT = newVal;
         localStorage.setItem(LS_FLAT, FLAT);
         restoreFlatBadge(FLAT);
-        // Reset state
+        // Reset all state + clear stale DOM
         monthlyCache  = {};
         liveData      = null;
         rechargeData  = null;
         selectedMonth = null;
-        // Update title
+        $('month-selector').innerHTML = '';
+        $('recharge-list').innerHTML  =
+          '<div class="recharge-loading"><div class="spinner"></div><span>Loading…</span></div>';
+        $('rs-total').textContent = '—';
+        $('rs-avg').textContent   = '—';
+        $('rs-count').textContent = '—';
         document.title = `${FLAT} — Meter`;
+        // Reload everything for the new flat
         loadLive().then(() => {
-          loadAllMonthly(); // always refresh — estimate needs monthly base readings
+          loadAllMonthly();
+          loadRecharge();
         });
       } else {
         restoreFlatBadge(FLAT);
