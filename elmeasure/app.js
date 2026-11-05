@@ -14,8 +14,8 @@
 // All API calls go through the local safety proxy (proxy.py).
 // The proxy enforces the read-only whitelist and adds CORS headers.
 // Run:  python3 proxy.py        (starts on port 8099)
-// ⚠️  Replace with your deployed Apps Script URL after deploying apps-script/elmeasure/Proxy.gs
-const PROXY_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+
+const PROXY_URL = 'https://script.google.com/macros/s/AKfycbzMkvnwPWKb4cttij712tL1vNiio2L9bue9S2nQZeA23HVsgZsxsn4R43ayMKzLf9gl/exec';
 const FLAT      = 'B401';
 const EB_TARIFF_FALLBACK  = 8.45;
 const DG_TARIFF_FALLBACK  = 32.0;
