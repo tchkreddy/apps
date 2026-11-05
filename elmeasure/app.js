@@ -227,22 +227,31 @@ function getSortedMonths() {
 
 async function loadAllMonthly() {
   const now = new Date();
-  const promises = [];
 
-  // Last 12 months
+  // Build ordered month keys: most recent first
+  const allKeys = [];
   for (let i = 0; i < 12; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = `${MONTH_NAMES[d.getMonth()]}, ${d.getFullYear()}`;
-    if (!monthlyCache[key]) {
-      promises.push(loadOneMonth(key));
-    }
+    allKeys.push(`${MONTH_NAMES[d.getMonth()]}, ${d.getFullYear()}`);
   }
 
-  await Promise.allSettled(promises);
+  const toLoad = allKeys.filter(k => !monthlyCache[k]);
+  if (toLoad.length === 0) {
+    renderMonthSelector();
+    renderTrendChart();
+    renderWaterTrendChart();
+    return;
+  }
+
+  // ── Phase 1: load last 3 months first → render immediately ──
+  const urgent   = toLoad.slice(0, 3);
+  const deferred = toLoad.slice(3);
+
+  await Promise.allSettled(urgent.map(k => loadOneMonth(k)));
+
+  // Render as soon as the first few months are ready
   renderMonthSelector();
   if (selectedMonth) renderMonthlyDetail(selectedMonth);
-
-  // Update live tab water grid with latest month's data
   const months = getSortedMonths();
   if (months.length > 0) {
     const mis = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
@@ -250,8 +259,14 @@ async function loadAllMonthly() {
     if (liveData) renderThisMonthEstimate(liveData);
   }
 
-  renderTrendChart();
-  renderWaterTrendChart();
+  // ── Phase 2: load remaining months in background (3 at a time) ──
+  for (let i = 0; i < deferred.length; i += 3) {
+    const batch = deferred.slice(i, i + 3);
+    await Promise.allSettled(batch.map(k => loadOneMonth(k)));
+    // Re-render charts as more data arrives
+    renderTrendChart();
+    renderWaterTrendChart();
+  }
 }
 
 async function loadOneMonth(monthKey) {
@@ -264,6 +279,8 @@ async function loadOneMonth(monthKey) {
     const bills = json.bills;
     if (bills && bills.length > 0) {
       monthlyCache[monthKey] = bills[0];
+      // Progressive: update selector chip as each month arrives
+      renderMonthSelector();
     }
   } catch (e) {
     console.warn(`loadOneMonth(${monthKey}):`, e.message);
