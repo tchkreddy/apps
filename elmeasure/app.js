@@ -157,9 +157,7 @@ function onFlatBadgeClick() {
         // Update title
         document.title = `${FLAT} — Meter`;
         loadLive().then(() => {
-          if (document.querySelector('#tab-monthly.active')) {
-            loadAllMonthly();
-          }
+          loadAllMonthly(); // always refresh — estimate needs monthly base readings
         });
       } else {
         restoreFlatBadge(FLAT);
