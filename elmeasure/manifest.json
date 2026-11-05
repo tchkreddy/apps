@@ -1,0 +1,29 @@
+{
+  "name": "B401 Meter Dashboard",
+  "short_name": "B401 Meter",
+  "description": "Live electricity & water meter dashboard for flat B401, Galaxy Apartments",
+  "start_url": "/apps/elmeasure/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "utilities"
+  ],
+  "lang": "en-IN",
+  "scope": "/apps/elmeasure/"
+}
