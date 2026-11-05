@@ -17,24 +17,21 @@
 
 // ── Config ────────────────────────────────────────────
 const PROXY_URL = 'https://script.google.com/macros/s/AKfycbzMkvnwPWKb4cttij712tL1vNiio2L9bue9S2nQZeA23HVsgZsxsn4R43ayMKzLf9gl/exec';
-const FLAT      = 'B401';
 const LS_KEY    = 'em_secret';
-
-// Secret resolution order:
-//   1. URL hash  → save to localStorage (seeds the installed PWA)
-//   2. localStorage (used by every home-screen launch after the first)
-//   3. Neither   → show lock screen
 (function seedSecret() {
   const fromHash = location.hash.replace(/^#/, '');
   if (fromHash) {
     localStorage.setItem(LS_KEY, fromHash);
-    // Strip hash from URL bar without reload (cosmetic)
     history.replaceState(null, '', location.pathname + location.search);
   }
 })();
 const ACCESS_SECRET = localStorage.getItem(LS_KEY) || '';
-const EB_TARIFF_FALLBACK  = 8.45;
-const DG_TARIFF_FALLBACK  = 32.0;
+
+const LS_FLAT = 'em_flat';
+let FLAT = (localStorage.getItem(LS_FLAT) || 'B401').toUpperCase();
+
+const EB_TARIFF_FALLBACK = 8.45;
+const DG_TARIFF_FALLBACK = 32.0;
 
 // Month names the server uses
 const MONTH_NAMES = [
@@ -104,6 +101,95 @@ async function safeGet(taskid, params) {
   return r.json();
 }
 
+// ── Flat Badge Edit ───────────────────────────────────
+function initFlatBadge() {
+  attachFlatBadgeClick();
+}
+
+function attachFlatBadgeClick() {
+  const badge = $('flat-badge');
+  if (!badge) return;
+  badge.style.cursor = 'pointer';
+  badge.addEventListener('click', onFlatBadgeClick, { once: true });
+}
+
+function onFlatBadgeClick() {
+  const badge = $('flat-badge');
+  if (!badge) return;
+
+  // Replace span with input
+  const input = document.createElement('input');
+  input.id = 'flat-input';
+  input.className = 'flat-badge-input';
+  input.value = FLAT;
+  input.maxLength = 10;
+  input.setAttribute('autocapitalize', 'characters');
+  input.setAttribute('autocorrect', 'off');
+  input.setAttribute('spellcheck', 'false');
+  input.setAttribute('autocomplete', 'off');
+  input.style.textTransform = 'uppercase';
+
+  badge.replaceWith(input);
+  input.focus();
+  input.select();
+
+  // Force uppercase on input
+  input.addEventListener('input', () => {
+    const pos = input.selectionStart;
+    input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    try { input.setSelectionRange(pos, pos); } catch (_) {}
+  });
+
+  // Enter = save
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const newVal = input.value.trim();
+      if (newVal) {
+        FLAT = newVal;
+        localStorage.setItem(LS_FLAT, FLAT);
+        restoreFlatBadge(FLAT);
+        // Reset state
+        monthlyCache  = {};
+        liveData      = null;
+        rechargeData  = null;
+        selectedMonth = null;
+        // Update title
+        document.title = `${FLAT} — Meter`;
+        loadLive().then(() => {
+          if (document.querySelector('#tab-monthly.active')) {
+            loadAllMonthly();
+          }
+        });
+      } else {
+        restoreFlatBadge(FLAT);
+      }
+    } else if (e.key === 'Escape') {
+      restoreFlatBadge(FLAT);
+    }
+  });
+
+  // Blur = cancel (restore without saving)
+  input.addEventListener('blur', () => {
+    // Small timeout so Enter blur doesn't double-trigger
+    setTimeout(() => {
+      const existing = $('flat-input');
+      if (existing) restoreFlatBadge(FLAT);
+    }, 150);
+  });
+}
+
+function restoreFlatBadge(text) {
+  const existing = $('flat-input') || $('flat-badge');
+  if (!existing) return;
+  const span = document.createElement('span');
+  span.id = 'flat-badge';
+  span.className = 'flat-badge';
+  span.textContent = text;
+  existing.replaceWith(span);
+  attachFlatBadgeClick();
+}
+
 // ── Tab navigation ────────────────────────────────────
 function initTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
@@ -147,7 +233,6 @@ async function loadLive() {
     $liveTime.textContent = fmtTime();
   } catch (e) {
     if (e.isUnauthorized) {
-      // Clear bad cached secret so user can re-seed via URL
       localStorage.removeItem(LS_KEY);
       showLockScreen('Wrong access secret. Clear your browser data and re-open via your private bookmarked URL.');
       return;
@@ -162,33 +247,31 @@ async function loadLive() {
 }
 
 function renderLive(d) {
-  // Balance hero
+  // Balance strip
   $('live-balance').textContent = fmtInt(d.pmb);
-  $('live-energy-type').textContent =
-    d.energytype === 1 ? 'EB Grid active' :
-    d.energytype === 2 ? 'DG / Generator active' : '';
 
-  // Metric cards
+  // Live power strip
   $('live-wattage').textContent = fmt(d.w, 1);
-  $('live-current').textContent = fmt(d.a, 3);
+  $('live-energy-type').textContent = d.energytype === 2 ? 'W · DG' : 'W · EB';
+
+  // Exact readings in details section
   $('live-eb').textContent      = fmt(d.ebwh, 2);
   $('live-dg').textContent      = fmt(d.dgwh, 3);
+  $('live-current').textContent = fmt(d.a, 3);
 
-  // This-month estimate
+  // This-month estimate (hero)
   renderThisMonthEstimate(d);
 }
 
 function renderThisMonthEstimate(live) {
-  // Find the most recent billed month's end readings
   const months = getSortedMonths();
   if (months.length === 0) {
-    // No monthly data yet — show partial from live only
-    $('estimate-note').textContent = 'Load Monthly tab first for full estimate';
+    $('estimate-note').textContent = 'Open Monthly tab once for full estimate';
     $('estimate-note').classList.add('visible');
     return;
   }
 
-  const lastBill = monthlyCache[months[0]]; // most recent
+  const lastBill = monthlyCache[months[0]];
   const mis = lastBill.mis ?? lastBill;
 
   const ebStart  = mis.ebpresentreading  ?? 0;
@@ -202,14 +285,16 @@ function renderThisMonthEstimate(live) {
   const dgCost = dgUsed * dgTariff;
   const total  = ebCost + dgCost;
 
+  $('est-total').textContent   = fmt(total, 0);
+  $('est-eb-cost').textContent = fmt(ebCost, 0);
+  $('est-dg-cost').textContent = fmt(dgCost, 0);
+
+  // Details section
   $('est-eb-usage').textContent = fmt(ebUsed, 2);
-  $('est-eb-cost').textContent  = fmt(ebCost, 0);
   $('est-dg-usage').textContent = fmt(dgUsed, 3);
-  $('est-dg-cost').textContent  = fmt(dgCost, 2);
-  $('est-total').textContent    = fmt(total, 0);
 
   $('estimate-note').textContent =
-    `Tariff: EB ₹${ebTariff}/kWh · DG ₹${dgTariff}/kWh · Base from ${months[0]}`;
+    `EB ₹${ebTariff}/kWh · DG ₹${dgTariff}/kWh · base from ${months[0]}`;
   $('estimate-note').classList.add('visible');
 }
 
@@ -286,8 +371,6 @@ async function loadAllMonthly() {
   // Check if the upstream DB is down (all urgent months errored with DB error)
   const months = getSortedMonths();
   if (months.length === 0) {
-    // No data came back — could be DB down or genuinely no bills
-    // Check if any result had a DB error flag
     const hasDbError = urgentResults.some(r => r.reason?.isDbError);
     showMonthlyState(hasDbError ? 'db-error' : 'empty');
     return;
@@ -348,7 +431,6 @@ async function loadOneMonth(monthKey) {
       custid: FLAT
     });
     if (json.success === false) {
-      // Upstream DB error (e.g. "ERROR: null" from Elmeasure)
       const err = new Error(json.msg || 'Upstream error');
       err.isDbError = true;
       throw err;
@@ -407,8 +489,6 @@ function renderMonthlyDetail(monthKey) {
 
   if (!bill) {
     loading.style.display = 'flex';
-    // Only overwrite the spinner text if it still looks like our spinner
-    // (don't clobber the db-error state which uses innerHTML, not a span)
     const span = loading.querySelector('span');
     if (span) span.textContent = `No data for ${monthKey}`;
     content.style.display = 'none';
@@ -424,19 +504,21 @@ function renderMonthlyDetail(monthKey) {
   $('monthly-dates').textContent  =
     `${mis.firstreadingdate || ''} → ${mis.lastreadingdate || ''}`;
 
-  // EB row
-  $('m-eb-prev').textContent  = fmt(mis.ebpreviousreading, 2);
-  $('m-eb-curr').textContent  = fmt(mis.ebpresentreading, 2);
+  // EB row (units + cost only in main view)
   $('m-eb-units').textContent = fmt(mis.ebconsumption, 2);
   $('m-eb-cost').textContent  = `₹${fmt(mis.ebtotalamount, 0)}`;
 
-  // DG row
-  $('m-dg-prev').textContent  = fmt(mis.dgpreviousreading, 3);
-  $('m-dg-curr').textContent  = fmt(mis.dgbpresentreading, 3);
+  // DG row (units + cost only)
   $('m-dg-units').textContent = fmt(mis.dgconsumption, 3);
   $('m-dg-cost').textContent  = `₹${fmt(mis.dgtotalamount, 2)}`;
 
-  // DI / Water rows
+  // Readings in collapsible details
+  $('m-eb-prev').textContent = fmt(mis.ebpreviousreading, 2);
+  $('m-eb-curr').textContent = fmt(mis.ebpresentreading, 2);
+  $('m-dg-prev').textContent = fmt(mis.dgpreviousreading, 3);
+  $('m-dg-curr').textContent = fmt(mis.dgbpresentreading, 3);
+
+  // DI / Water rows (3 columns: badge | units | cost)
   const waterTable = $('monthly-water-table');
   let waterRows = '';
   let totalWaterCost = 0;
@@ -444,24 +526,20 @@ function renderMonthlyDetail(monthKey) {
     const curr = mis[`di${i}presentreading`];
     if (curr == null) continue;
     const label = (mis[`di${i}text`] || `DI${i}`).toUpperCase();
-    const prev  = mis[`di${i}previousreading`] ?? '—';
-    const cons  = mis[`di${i}consumption`]     ?? 0;
-    const cost  = mis[`di${i}totalamount`]     ?? 0;
+    const cons  = mis[`di${i}consumption`] ?? 0;
+    const cost  = mis[`di${i}totalamount`] ?? 0;
     totalWaterCost += Number(cost);
     waterRows += `
       <div class="bill-row">
         <span class="src-badge di-badge">${escHtml(label)}</span>
-        <span>${fmt(prev, 1)}</span>
-        <span>${fmt(curr, 1)}</span>
         <span>${fmt(cons, 1)}</span>
         <span>₹${fmt(cost, 0)}</span>
       </div>`;
   }
   // Replace everything after the header row
-  const headerRow = waterTable.querySelector('.bill-header-row');
-  // Remove old data rows
   waterTable.querySelectorAll('.bill-row:not(.bill-header-row)').forEach(r => r.remove());
-  headerRow.insertAdjacentHTML('afterend', waterRows);
+  const headerRow = waterTable.querySelector('.bill-header-row');
+  if (headerRow) headerRow.insertAdjacentHTML('afterend', waterRows);
 
   // Total
   const totalBill = (mis.ebtotalamount || 0) + (mis.dgtotalamount || 0) + totalWaterCost + (mis.fixedcost || 0);
@@ -621,6 +699,27 @@ async function loadRecharge() {
   }
 }
 
+function parseDDMMYYYY(str) {
+  if (!str) return 0;
+  // "17/11/2025 02:38 PM" → Date timestamp
+  const [datePart] = str.split(' ');
+  const [dd, mm, yyyy] = datePart.split('/');
+  return new Date(`${yyyy}-${mm}-${dd}`).getTime();
+}
+
+function monthsSpanned(rclist) {
+  if (!rclist.length) return 1;
+  const dates = rclist.map(r => parseDDMMYYYY(r.receiptdate)).filter(Boolean);
+  if (!dates.length) return 1;
+  const minDate = new Date(Math.min(...dates));
+  const maxDate = new Date(Math.max(...dates));
+  // include current month if latest is before now
+  const toDate = maxDate < new Date() ? new Date() : maxDate;
+  const months = (toDate.getFullYear() - minDate.getFullYear()) * 12
+               + (toDate.getMonth() - minDate.getMonth()) + 1;
+  return Math.max(1, months);
+}
+
 function renderRecharge(data) {
   const rclist = data.rclist ?? [];
   const total  = data.total  ?? rclist.reduce((s, r) => s + (r.rcamount ?? 0), 0);
@@ -629,7 +728,7 @@ function renderRecharge(data) {
   $('rs-total').textContent = `₹${fmtInt(total)}`;
   $('rs-count').textContent = rclist.length;
   $('rs-avg').textContent   = rclist.length
-    ? `₹${fmtInt(total / rclist.length)}`
+    ? `₹${fmtInt(total / monthsSpanned(rclist))}`
     : '—';
 
   // List (most recent first)
@@ -647,14 +746,6 @@ function renderRecharge(data) {
       <div class="recharge-amount">₹${fmtInt(r.rcamount)}</div>
     </div>
   `).join('');
-}
-
-function parseDDMMYYYY(str) {
-  if (!str) return 0;
-  // "17/11/2025 02:38 PM" → Date
-  const [datePart] = str.split(' ');
-  const [dd, mm, yyyy] = datePart.split('/');
-  return new Date(`${yyyy}-${mm}-${dd}`).getTime();
 }
 
 // ── Security helper ───────────────────────────────────
@@ -675,6 +766,7 @@ async function init() {
   }
 
   initTabs();
+  initFlatBadge();
 
   $refresh.addEventListener('click', () => {
     clearTimeout(refreshTimer);
@@ -684,6 +776,9 @@ async function init() {
 
   // Initial load
   await loadLive();
+
+  // Kick off monthly loading in background so it's ready when user switches tabs
+  loadAllMonthly();
 
   // Auto-refresh every 60 seconds
   scheduleAutoRefresh();

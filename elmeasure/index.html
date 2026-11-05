@@ -8,25 +8,24 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="B401 Meter" />
-  <title>B401 — Meter Dashboard</title>
+  <title>B401 — Meter</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
-  <!-- Safe-area wrapper -->
   <div id="app">
 
-    <!-- ── Header ─────────────────────────────────────────── -->
+    <!-- ── Header ────────────────────────────────────── -->
     <header id="app-header">
       <div class="header-left">
         <span class="flat-badge">B401</span>
         <div class="header-titles">
-          <h1>Meter Dashboard</h1>
+          <h1>Meter</h1>
           <p class="subtitle" id="header-subtitle">Galaxy Apartments</p>
         </div>
       </div>
-      <button id="refresh-btn" class="icon-btn" title="Refresh live data" aria-label="Refresh">
+      <button id="refresh-btn" class="icon-btn" title="Refresh" aria-label="Refresh">
         <svg id="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="23 4 23 10 17 10"/>
           <polyline points="1 20 1 14 7 14"/>
@@ -35,7 +34,7 @@
       </button>
     </header>
 
-    <!-- ── Tab Bar ─────────────────────────────────────────── -->
+    <!-- ── Tab Bar ────────────────────────────────────── -->
     <nav id="tab-bar" role="tablist">
       <button class="tab active" data-tab="live" role="tab" aria-selected="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -51,7 +50,7 @@
       </button>
     </nav>
 
-    <!-- ── Main Content ────────────────────────────────────── -->
+    <!-- ── Main Content ───────────────────────────────── -->
     <main id="main-content">
 
       <!-- ===== LIVE TAB ===== -->
@@ -59,108 +58,87 @@
         <!-- Status bar -->
         <div id="live-status-bar" class="status-bar">
           <span id="live-status-dot" class="status-dot"></span>
-          <span id="live-status-text">Fetching live data…</span>
+          <span id="live-status-text">Fetching…</span>
           <span id="live-timestamp" class="status-time"></span>
         </div>
 
-        <!-- Balance Hero -->
-        <div class="hero-card" id="balance-hero">
-          <div class="hero-label">Prepaid Balance</div>
-          <div class="hero-value" id="live-balance">—</div>
-          <div class="hero-unit">INR</div>
-          <div class="hero-sub" id="live-energy-type"></div>
-        </div>
-
-        <!-- Live Metric Cards -->
-        <div class="metrics-grid">
-          <div class="metric-card" id="card-wattage">
-            <div class="metric-icon wattage-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            </div>
-            <div class="metric-body">
-              <div class="metric-label">Live Power</div>
-              <div class="metric-value" id="live-wattage">—</div>
-              <div class="metric-unit">W</div>
-            </div>
+        <!-- ── This Month So Far (HERO) ─────────────── -->
+        <div class="section-title" style="margin-top:4px">This Month So Far</div>
+        <div class="month-hero-card" id="this-month-card">
+          <div class="month-hero-total">
+            <div class="month-hero-total-label">Estimated Bill</div>
+            <div class="month-hero-total-value" id="est-total">—</div>
+            <div class="month-hero-total-unit">₹</div>
           </div>
-
-          <div class="metric-card" id="card-current">
-            <div class="metric-icon current-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+          <div class="month-hero-breakdown">
+            <div class="month-hero-item">
+              <span class="src-badge eb-badge">EB</span>
+              <span class="month-hero-cost" id="est-eb-cost">—</span>
+              <span class="month-hero-unit">₹</span>
             </div>
-            <div class="metric-body">
-              <div class="metric-label">Current</div>
-              <div class="metric-value" id="live-current">—</div>
-              <div class="metric-unit">A</div>
+            <div class="month-hero-item">
+              <span class="src-badge dg-badge">DG</span>
+              <span class="month-hero-cost" id="est-dg-cost">—</span>
+              <span class="month-hero-unit">₹</span>
             </div>
-          </div>
-
-          <div class="metric-card" id="card-eb">
-            <div class="metric-icon eb-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            </div>
-            <div class="metric-body">
-              <div class="metric-label">EB Meter</div>
-              <div class="metric-value" id="live-eb">—</div>
-              <div class="metric-unit">kWh</div>
-            </div>
-          </div>
-
-          <div class="metric-card" id="card-dg">
-            <div class="metric-icon dg-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-            </div>
-            <div class="metric-body">
-              <div class="metric-label">DG Meter</div>
-              <div class="metric-value" id="live-dg">—</div>
-              <div class="metric-unit">kWh</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Oct-so-far estimate -->
-        <div class="section-title">This Month So Far</div>
-        <div class="estimate-card" id="this-month-card">
-          <div class="estimate-row">
-            <span class="estimate-label">EB Usage</span>
-            <span class="estimate-value" id="est-eb-usage">—</span>
-            <span class="estimate-unit">kWh</span>
-          </div>
-          <div class="estimate-row">
-            <span class="estimate-label">EB Cost</span>
-            <span class="estimate-value" id="est-eb-cost">—</span>
-            <span class="estimate-unit">₹</span>
-          </div>
-          <div class="estimate-row">
-            <span class="estimate-label">DG Usage</span>
-            <span class="estimate-value" id="est-dg-usage">—</span>
-            <span class="estimate-unit">kWh</span>
-          </div>
-          <div class="estimate-row">
-            <span class="estimate-label">DG Cost</span>
-            <span class="estimate-value" id="est-dg-cost">—</span>
-            <span class="estimate-unit">₹</span>
-          </div>
-          <div class="estimate-row total-row">
-            <span class="estimate-label">Est. Total</span>
-            <span class="estimate-value" id="est-total">—</span>
-            <span class="estimate-unit">₹</span>
           </div>
           <div class="estimate-note" id="estimate-note"></div>
         </div>
 
-        <!-- Water readings (DI) -->
-        <div class="section-title">Water Meters (Last Billed)</div>
-        <div class="water-grid" id="water-grid">
-          <div class="water-loading">Load monthly to see water data</div>
+        <!-- ── Balance + Power strip ────────────────── -->
+        <div class="live-strip">
+          <div class="live-strip-item">
+            <div class="live-strip-label">Balance</div>
+            <div class="live-strip-value" id="live-balance">—</div>
+            <div class="live-strip-unit">₹</div>
+          </div>
+          <div class="live-strip-divider"></div>
+          <div class="live-strip-item">
+            <div class="live-strip-label">Live Power</div>
+            <div class="live-strip-value" id="live-wattage">—</div>
+            <div class="live-strip-unit" id="live-energy-type">W</div>
+          </div>
         </div>
+
+        <!-- ── Water Meters (last billed) ───────────── -->
+        <div class="section-title">Water (Last Billed)</div>
+        <div class="water-grid" id="water-grid">
+          <div class="water-loading">Open Monthly tab once to load water data</div>
+        </div>
+
+        <!-- ── Details collapsible ──────────────────── -->
+        <details class="details-panel" id="live-details">
+          <summary class="details-summary">Meter Readings &amp; Details</summary>
+          <div class="details-body">
+            <div class="detail-row">
+              <span class="detail-label">EB Meter</span>
+              <span class="detail-value"><span id="live-eb">—</span> kWh</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">DG Meter</span>
+              <span class="detail-value"><span id="live-dg">—</span> kWh</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Current</span>
+              <span class="detail-value"><span id="live-current">—</span> A</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">EB Usage (est.)</span>
+              <span class="detail-value"><span id="est-eb-usage">—</span> kWh</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">DG Usage (est.)</span>
+              <span class="detail-value"><span id="est-dg-usage">—</span> kWh</span>
+            </div>
+          </div>
+        </details>
       </section>
 
       <!-- ===== MONTHLY TAB ===== -->
       <section id="tab-monthly" class="tab-panel">
         <div class="section-title" style="margin-top:0">Monthly Bills</div>
 
-        <!-- Month selector -->
+        <!-- Month selector chips -->
         <div class="month-scroll" id="month-selector" role="listbox" aria-label="Select month"></div>
 
         <!-- Monthly detail card -->
@@ -175,17 +153,23 @@
               <span id="monthly-dates" class="monthly-dates"></span>
             </div>
 
-            <!-- EB / DG -->
+            <!-- Total bill (prominent) -->
+            <div class="monthly-total-hero">
+              <span class="monthly-total-hero-label">Total Bill</span>
+              <span class="monthly-total-hero-value" id="monthly-total-amount">—</span>
+            </div>
+
+            <!-- EB / DG / Water summary -->
             <div class="bill-section-title">⚡ Electricity</div>
             <div class="bill-table">
               <div class="bill-row bill-header-row">
-                <span>Source</span><span>Prev</span><span>Present</span><span>Units</span><span>Cost</span>
+                <span>Source</span><span>Units</span><span>Cost</span>
               </div>
               <div class="bill-row" id="monthly-eb-row">
-                <span class="src-badge eb-badge">EB</span><span id="m-eb-prev">—</span><span id="m-eb-curr">—</span><span id="m-eb-units">—</span><span id="m-eb-cost">—</span>
+                <span class="src-badge eb-badge">EB</span><span id="m-eb-units">—</span><span id="m-eb-cost">—</span>
               </div>
               <div class="bill-row" id="monthly-dg-row">
-                <span class="src-badge dg-badge">DG</span><span id="m-dg-prev">—</span><span id="m-dg-curr">—</span><span id="m-dg-units">—</span><span id="m-dg-cost">—</span>
+                <span class="src-badge dg-badge">DG</span><span id="m-dg-units">—</span><span id="m-dg-cost">—</span>
               </div>
             </div>
 
@@ -193,27 +177,31 @@
             <div class="bill-section-title">💧 Water Meters</div>
             <div class="bill-table" id="monthly-water-table">
               <div class="bill-row bill-header-row">
-                <span>Meter</span><span>Prev</span><span>Present</span><span>Units</span><span>Cost</span>
+                <span>Meter</span><span>Units</span><span>Cost</span>
               </div>
               <!-- rows injected by JS -->
             </div>
 
-            <!-- Total -->
-            <div class="monthly-total-row">
-              <span>Total Bill</span>
-              <span id="monthly-total-amount">—</span>
-            </div>
+            <!-- Details collapsible (meter readings) -->
+            <details class="details-panel" style="margin-top:12px">
+              <summary class="details-summary">Meter Readings</summary>
+              <div class="details-body">
+                <div class="detail-row"><span class="detail-label">EB Prev</span><span class="detail-value"><span id="m-eb-prev">—</span> kWh</span></div>
+                <div class="detail-row"><span class="detail-label">EB Present</span><span class="detail-value"><span id="m-eb-curr">—</span> kWh</span></div>
+                <div class="detail-row"><span class="detail-label">DG Prev</span><span class="detail-value"><span id="m-dg-prev">—</span> kWh</span></div>
+                <div class="detail-row"><span class="detail-label">DG Present</span><span class="detail-value"><span id="m-dg-curr">—</span> kWh</span></div>
+              </div>
+            </details>
           </div>
         </div>
 
-        <!-- Trend chart -->
-        <div class="section-title">Trend — EB kWh/month</div>
+        <!-- Trend charts -->
+        <div class="section-title">Electricity Trend (kWh)</div>
         <div class="chart-container" id="chart-container">
           <canvas id="trend-chart"></canvas>
         </div>
 
-        <!-- Water chart -->
-        <div class="section-title">Trend — Water (DI3+DI4) KL/month</div>
+        <div class="section-title">Water Trend (KL)</div>
         <div class="chart-container" id="water-chart-container">
           <canvas id="water-trend-chart"></canvas>
         </div>
@@ -230,12 +218,12 @@
             <div class="rs-value" id="rs-total">—</div>
           </div>
           <div class="rs-item">
-            <div class="rs-label">Transactions</div>
-            <div class="rs-value" id="rs-count">—</div>
+            <div class="rs-label">Avg / Month</div>
+            <div class="rs-value" id="rs-avg">—</div>
           </div>
           <div class="rs-item">
-            <div class="rs-label">Avg / Recharge</div>
-            <div class="rs-value" id="rs-avg">—</div>
+            <div class="rs-label">Transactions</div>
+            <div class="rs-value" id="rs-count">—</div>
           </div>
         </div>
 
@@ -250,7 +238,7 @@
 
     </main>
 
-    <!-- ── Toast ──────────────────────────────────────────── -->
+    <!-- ── Toast ─────────────────────────────────────── -->
     <div id="toast" class="toast" role="alert" aria-live="polite"></div>
 
   </div><!-- #app -->
