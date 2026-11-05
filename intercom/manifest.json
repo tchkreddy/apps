@@ -2,7 +2,7 @@
   "name": "Intercom",
   "short_name": "Intercom",
   "description": "Private, zero-cloud room-to-room walkie-talkie",
-  "start_url": "./index.html",
+  "start_url": "/apps/intercom/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0B0E14",
@@ -14,5 +14,6 @@
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "scope": "/apps/intercom/"
 }
