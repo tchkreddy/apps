@@ -266,7 +266,7 @@ function renderLive(d) {
 function renderThisMonthEstimate(live) {
   const months = getSortedMonths();
   if (months.length === 0) {
-    $('estimate-note').textContent = 'Open Monthly tab once for full estimate';
+    $('estimate-note').textContent = 'Loading monthly data for estimate…';
     $('estimate-note').classList.add('visible');
     return;
   }
