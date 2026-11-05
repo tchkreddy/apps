@@ -4,15 +4,14 @@
  * Live data always fetched fresh (no caching of API responses).
  */
 
-const CACHE_NAME = 'b401-meter-v1';
+const CACHE_NAME = 'b401-meter-v2';
 const SHELL_ASSETS = [
   './',
   './index.html',
   './app.css',
   './app.js',
   './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+  './icon.svg',
 ];
 
 // ── Install: pre-cache app shell ──────────────────────
