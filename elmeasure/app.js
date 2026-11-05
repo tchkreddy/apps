@@ -243,21 +243,32 @@ async function loadAllMonthly() {
     return;
   }
 
+  // Show spinner while loading
+  showMonthlyState('loading');
+
   // ── Phase 1: load last 3 months first → render immediately ──
   const urgent   = toLoad.slice(0, 3);
   const deferred = toLoad.slice(3);
 
-  await Promise.allSettled(urgent.map(k => loadOneMonth(k)));
+  const urgentResults = await Promise.allSettled(urgent.map(k => loadOneMonth(k)));
 
-  // Render as soon as the first few months are ready
+  // Check if the upstream DB is down (all urgent months errored with DB error)
+  const months = getSortedMonths();
+  if (months.length === 0) {
+    // No data came back — could be DB down or genuinely no bills
+    // Check if any result had a DB error flag
+    const hasDbError = urgentResults.some(r => r.reason?.isDbError);
+    showMonthlyState(hasDbError ? 'db-error' : 'empty');
+    return;
+  }
+
+  // Some data arrived — render it
+  showMonthlyState('ready');
   renderMonthSelector();
   if (selectedMonth) renderMonthlyDetail(selectedMonth);
-  const months = getSortedMonths();
-  if (months.length > 0) {
-    const mis = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
-    renderWaterGrid(mis);
-    if (liveData) renderThisMonthEstimate(liveData);
-  }
+  const mis = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
+  renderWaterGrid(mis);
+  if (liveData) renderThisMonthEstimate(liveData);
 
   // ── Phase 2: load remaining months in background (3 at a time) ──
   for (let i = 0; i < deferred.length; i += 3) {
@@ -269,6 +280,35 @@ async function loadAllMonthly() {
   }
 }
 
+/** Show one of: 'loading' | 'ready' | 'db-error' | 'empty' */
+function showMonthlyState(state) {
+  const loading = $('monthly-loading');
+  const content = $('monthly-content');
+  if (state === 'ready') {
+    loading.style.display = 'none';
+    content.style.display = 'block';
+  } else if (state === 'loading') {
+    loading.style.display = 'flex';
+    loading.innerHTML = '<div class="spinner"></div><span>Fetching monthly data\u2026</span>';
+    content.style.display = 'none';
+  } else if (state === 'db-error') {
+    loading.style.display = 'flex';
+    loading.innerHTML = `
+      <div style="text-align:center;padding:16px">
+        <div style="font-size:2rem;margin-bottom:8px">\u26a0\ufe0f</div>
+        <div style="color:var(--accent-red);font-weight:600;margin-bottom:4px">Billing server unavailable</div>
+        <div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:12px">The Elmeasure billing database is temporarily down.<br>Live data still works.</div>
+        <button onclick="monthlyCache={};selectedMonth=null;loadAllMonthly()"
+                style="background:var(--accent-blue);color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:0.9rem;cursor:pointer">\u21bb Retry</button>
+      </div>`;
+    content.style.display = 'none';
+  } else {
+    loading.style.display = 'flex';
+    loading.innerHTML = '<span style="color:var(--text-dim)">No billing data available</span>';
+    content.style.display = 'none';
+  }
+}
+
 async function loadOneMonth(monthKey) {
   try {
     const json = await safeGet('GetFromMonthlyBill', {
@@ -276,6 +316,12 @@ async function loadOneMonth(monthKey) {
       command: 'select',
       custid: FLAT
     });
+    if (json.success === false) {
+      // Upstream DB error (e.g. "ERROR: null" from Elmeasure)
+      const err = new Error(json.msg || 'Upstream error');
+      err.isDbError = true;
+      throw err;
+    }
     const bills = json.bills;
     if (bills && bills.length > 0) {
       monthlyCache[monthKey] = bills[0];
@@ -284,6 +330,7 @@ async function loadOneMonth(monthKey) {
     }
   } catch (e) {
     console.warn(`loadOneMonth(${monthKey}):`, e.message);
+    throw e;  // re-throw so Promise.allSettled captures the reason
   }
 }
 
@@ -329,7 +376,10 @@ function renderMonthlyDetail(monthKey) {
 
   if (!bill) {
     loading.style.display = 'flex';
-    loading.querySelector('span').textContent = `No data for ${monthKey}`;
+    // Only overwrite the spinner text if it still looks like our spinner
+    // (don't clobber the db-error state which uses innerHTML, not a span)
+    const span = loading.querySelector('span');
+    if (span) span.textContent = `No data for ${monthKey}`;
     content.style.display = 'none';
     return;
   }
