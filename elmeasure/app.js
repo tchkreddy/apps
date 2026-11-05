@@ -101,6 +101,46 @@ async function safeGet(taskid, params) {
   return r.json();
 }
 
+// ── Full state + DOM reset (called on flat change) ────
+function resetAllState() {
+  // JS state
+  monthlyCache  = {};
+  liveData      = null;
+  rechargeData  = null;
+  selectedMonth = null;
+  clearTimeout(refreshTimer);
+
+  // Live tab
+  $('live-balance').textContent      = '—';
+  $('live-wattage').textContent      = '—';
+  $('live-energy-type').textContent  = 'W';
+  $('live-eb').textContent           = '—';
+  $('live-dg').textContent           = '—';
+  $('live-current').textContent      = '—';
+  $('est-total').textContent         = '—';
+  $('est-eb-cost').textContent       = '—';
+  $('est-dg-cost').textContent       = '—';
+  $('est-eb-usage').textContent      = '—';
+  $('est-dg-usage').textContent      = '—';
+  $('estimate-note').textContent     = '';
+  $('estimate-note').classList.remove('visible');
+  $('water-grid').innerHTML          = '<div class="water-loading">Loading water data…</div>';
+  $('live-status-dot').className     = 'status-dot';
+  $('live-status-text').textContent  = 'Fetching…';
+  $('live-timestamp').textContent    = '';
+
+  // Monthly tab
+  $('month-selector').innerHTML = '';
+  showMonthlyState('loading');
+
+  // Recharge tab
+  $('rs-total').textContent = '—';
+  $('rs-avg').textContent   = '—';
+  $('rs-count').textContent = '—';
+  $('recharge-list').innerHTML =
+    '<div class="recharge-loading"><div class="spinner"></div><span>Loading…</span></div>';
+}
+
 // ── Flat Badge Edit ───────────────────────────────────
 function initFlatBadge() {
   attachFlatBadgeClick();
@@ -149,19 +189,8 @@ function onFlatBadgeClick() {
         FLAT = newVal;
         localStorage.setItem(LS_FLAT, FLAT);
         restoreFlatBadge(FLAT);
-        // Reset all state + clear stale DOM
-        monthlyCache  = {};
-        liveData      = null;
-        rechargeData  = null;
-        selectedMonth = null;
-        $('month-selector').innerHTML = '';
-        $('recharge-list').innerHTML  =
-          '<div class="recharge-loading"><div class="spinner"></div><span>Loading…</span></div>';
-        $('rs-total').textContent = '—';
-        $('rs-avg').textContent   = '—';
-        $('rs-count').textContent = '—';
         document.title = `${FLAT} — Meter`;
-        // Reload everything for the new flat
+        resetAllState();
         loadLive().then(() => {
           loadAllMonthly();
           loadRecharge();
