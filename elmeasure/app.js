@@ -767,6 +767,9 @@ async function init() {
 
   initTabs();
   initFlatBadge();
+  // Sync badge text with actual stored flat (may differ from HTML default)
+  const badge = $('flat-badge');
+  if (badge) badge.textContent = FLAT;
 
   $refresh.addEventListener('click', () => {
     clearTimeout(refreshTimer);
