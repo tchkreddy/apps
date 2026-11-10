@@ -1,5 +1,5 @@
 /**
- * B401 Meter PWA — app.js  v2.0
+ * B401 Meter PWA — app.js  v2.1
  * Native ES6 module. No build step.
  *
  * SAFE API CONTRACT:
@@ -132,7 +132,10 @@ function resetAll() {
   const note = $('estimate-note');
   note.textContent = '';
   note.classList.remove('visible');
-  $('water-grid').innerHTML         = '<div class="water-loading">Loading water data…</div>';
+  $('water-grid').innerHTML = '<div class="water-loading">Loading water data…</div>';
+  // Prediction cards
+  const pc = $('prediction-cards');
+  if (pc) pc.innerHTML = '<div class="pred-loading">Calculating…</div>';
   $liveDot.className                = 'status-dot';
   $liveStatus.textContent           = 'Fetching…';
   $liveTime.textContent             = '';
@@ -262,6 +265,11 @@ function initTabs() {
       });
       // Lazy-load only if not already loaded
       if (target === 'monthly' && Object.keys(monthlyCache).length === 0) loadAllMonthly();
+      if (target === 'monthly' && Object.keys(monthlyCache).length > 0) {
+        // Redraw charts now that tab is visible (they may have drawn at width=0)
+        renderTrendChart();
+        renderWaterTrendChart();
+      }
       if (target === 'recharge' && !rechargeData) loadRecharge();
     });
   });
@@ -312,6 +320,7 @@ function renderLive(d) {
 
   // Hero estimate (uses monthlyCache if available)
   renderEstimate(d);
+  renderPredictions(d);
 }
 
 function renderEstimate(live) {
@@ -342,6 +351,71 @@ function renderEstimate(live) {
   $('estimate-note').textContent =
     `EB ₹${ebTariff}/kWh · DG ₹${dgTariff}/kWh · base from ${months[0]}`;
   $('estimate-note').classList.add('visible');
+
+  // Also update prediction cards now that we have billing data
+  renderPredictions(live);
+}
+
+// ── Prediction Cards ─────────────────────────────────────
+function renderPredictions(live) {
+  const pc = $('prediction-cards');
+  if (!pc) return;
+
+  const months = getSortedMonths();
+  const balance = Number(live?.pmb ?? 0);
+
+  // Need at least 1 month of history for avg
+  if (months.length === 0) {
+    pc.innerHTML = '<div class="pred-loading">Need billing data for predictions…</div>';
+    return;
+  }
+
+  // 3-month average daily rate (or fewer if we don't have 3)
+  const recent = months.slice(0, Math.min(3, months.length));
+  const totalBill = recent.reduce((s, m) => {
+    const mis = monthlyCache[m]?.mis ?? monthlyCache[m];
+    return s + Number(mis?.grandtotal || mis?.ebtotalamount || 0) +
+               Number(mis?.dgtotalamount || 0);
+  }, 0);
+  const avgMonthlyBill = totalBill / recent.length;
+  const dailyRate = avgMonthlyBill / 30;
+
+  // Days balance will last
+  const daysLeft = dailyRate > 0 ? Math.floor(balance / dailyRate) : null;
+  const runoutDate = daysLeft != null
+    ? new Date(Date.now() + daysLeft * 86400000)
+    : null;
+
+  // Days until end of NEXT month
+  const now = new Date();
+  const endNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0); // last day of next month
+  const daysToEndNext = Math.ceil((endNextMonth - now) / 86400000);
+
+  // Recharge needed = cost through end of next month minus current balance, rounded up to ₹500
+  const neededRaw = dailyRate * daysToEndNext - balance;
+  const rechargeNeeded = neededRaw > 0
+    ? Math.ceil(neededRaw / 500) * 500
+    : 0;
+
+  // Format runout date as "12 Nov" or "comfortable"
+  const runoutStr = runoutDate
+    ? runoutDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    : '—';
+  const runoutLabel = daysLeft != null
+    ? (daysLeft >= daysToEndNext ? '✅ Beyond next month' : `~${daysLeft} days · till ${runoutStr}`)
+    : '—';
+
+  pc.innerHTML = `
+    <div class="pred-card">
+      <div class="pred-label">Balance Runway</div>
+      <div class="pred-value">${runoutLabel}</div>
+      <div class="pred-sub">at ₹${Math.round(dailyRate)}/day avg</div>
+    </div>
+    <div class="pred-card ${rechargeNeeded === 0 ? 'pred-ok' : 'pred-warn'}">
+      <div class="pred-label">Recharge for Next Month</div>
+      <div class="pred-value">${rechargeNeeded === 0 ? 'Not needed ✅' : '₹' + fmtInt(rechargeNeeded)}</div>
+      <div class="pred-sub">to cover till ${endNextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
+    </div>`;
 }
 
 function renderWaterGrid(mis) {
@@ -595,10 +669,14 @@ function renderWaterTrendChart() {
 function drawBarChart(canvasId, labels, datasets) {
   const canvas = $(canvasId);
   if (!canvas) return;
+
+  // If the monthly tab is hidden, clientWidth=0 — measure window width instead
+  const parentW = canvas.parentElement.clientWidth;
+  const W = (parentW > 20 ? parentW : window.innerWidth) - 24;
+  const H = 170;
+
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const W   = canvas.parentElement.clientWidth - 24;
-  const H   = 170;
   canvas.width  = W * dpr;
   canvas.height = H * dpr;
   canvas.style.width  = W + 'px';
