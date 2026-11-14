@@ -437,12 +437,12 @@ function renderPredictions(live) {
 
   pc.innerHTML = `
     <div class="pred-card">
-      <div class="pred-label">Balance Runway</div>
-      <div class="pred-value">${runoutLabel}</div>
-      <div class="pred-sub">at ₹${Math.round(dailyRate)}/day avg</div>
+      <div class="pred-label">3-Month Avg Bill</div>
+      <div class="pred-value">₹${fmtInt(avgMonthlyBill)}</div>
+      <div class="pred-sub">₹${Math.round(dailyRate)}/day · basis for estimates</div>
     </div>
     <div class="pred-card ${rechargeNeeded === 0 ? 'pred-ok' : 'pred-warn'}">
-      <div class="pred-label">Recharge for Next Month</div>
+      <div class="pred-label">Recharge</div>
       <div class="pred-value">${rechargeNeeded === 0 ? 'Not needed ✅' : '₹' + fmtInt(rechargeNeeded)}</div>
       <div class="pred-sub">to cover till ${endNextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
     </div>`;
