@@ -491,7 +491,7 @@ function renderWaterGrid(mis) {
       <div class="water-card-label">💧 D${c.i}</div>
       <div class="water-card-reading">${fmt(c.curr, 1)}</div>
       <div class="water-card-unit">cumulative reading</div>
-      <div class="water-card-delta">${c.cons > 0 ? `+${fmt(c.cons, 1)} this month` : 'no change this month'}</div>
+      <div class="water-card-delta">${c.cons > 0 ? `+${fmt(c.cons, 1)} that month` : 'no change that month'}</div>
     </div>`);
 
   grid.innerHTML = cards.join('');
