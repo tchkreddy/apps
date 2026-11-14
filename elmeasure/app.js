@@ -497,14 +497,8 @@ function renderWaterGrid(mis) {
     return;
   }
 
-  // Smart label: show channels that have non-zero consumption this month first.
-  // If none have consumption (e.g. billing DB had zeros), fall back to top-2 by reading value.
-  const withConsumption = channels.filter(c => c.cons > 0);
-  const toShow = withConsumption.length > 0
-    ? withConsumption.slice(0, 4)                                        // all active ones
-    : [...channels].sort((a, b) => b.curr - a.curr).slice(0, 2);        // top-2 by absolute reading
-
-  const cards = toShow.map(c => `
+  // Always show all 4 DI channels
+  const cards = channels.map(c => `
     <div class="water-card">
       <div class="water-card-label">💧 D${c.i}</div>
       <div class="water-card-reading">${fmt(c.curr, 1)}</div>
