@@ -110,54 +110,81 @@ async function safeGet(taskid, params) {
 //  Called on flat number change before reloading all data
 // ═══════════════════════════════════════════════════════
 function resetAll() {
-  // State
+  // ── JS state ──────────────────────────────────────────
   liveData      = null;
   monthlyCache  = {};
   rechargeData  = null;
   selectedMonth = null;
   clearTimeout(refreshTimer);
 
-  // ── Live tab ──
-  $('live-balance').textContent     = '—';
-  $('live-wattage').textContent     = '—';
-  $('live-energy-type').textContent = 'W';
-  $('live-eb').textContent          = '—';
-  $('live-dg').textContent          = '—';
-  $('live-current').textContent     = '—';
-  $('est-total').textContent        = '—';
-  $('est-eb-cost').textContent      = '—';
-  $('est-dg-cost').textContent      = '—';
-  $('est-eb-usage').textContent     = '—';
-  $('est-dg-usage').textContent     = '—';
-  const estProj = $('est-projected'); if (estProj) estProj.textContent = '—';
-  const liveRunway = $('live-runway'); if (liveRunway) liveRunway.textContent = '';
-  const powerCost = $('live-power-cost'); if (powerCost) powerCost.textContent = '';
+  // ── Header ────────────────────────────────────────────
+  const sub = $('header-subtitle');
+  if (sub) {
+    sub.textContent = 'Galaxy Apartments';
+    delete sub.dataset.ownerSet;          // allow re-fetch for new flat
+  }
+
+  // ── Status bar ────────────────────────────────────────
+  $liveDot.className      = 'status-dot';
+  $liveStatus.textContent = 'Fetching…';
+  $liveTime.textContent   = '';
+
+  // ── This Month hero card ──────────────────────────────
+  $('est-total').textContent     = '—';
+  $('est-projected').textContent = '—';
+  $('est-eb-cost').textContent   = '—';
+  $('est-dg-cost').textContent   = '—';
   const note = $('estimate-note');
   note.textContent = '';
   note.classList.remove('visible');
-  $('water-grid').innerHTML = '<div class="water-loading">Loading water data…</div>';
-  // Prediction cards
+  const vsEl = $('estimate-vs');
+  if (vsEl) { vsEl.textContent = ''; vsEl.className = 'estimate-vs'; }
+
+  // ── Live strip (Balance + Power) ──────────────────────
+  $('live-balance').textContent     = '—';
+  $('live-runway').textContent      = '';
+  $('live-wattage').textContent     = '—';
+  $('live-energy-type').textContent = 'W';
+  $('live-power-cost').textContent  = '';
+
+  // ── Estimates section ─────────────────────────────────
   const pc = $('prediction-cards');
   if (pc) pc.innerHTML = '<div class="pred-loading">Calculating…</div>';
-  $liveDot.className                = 'status-dot';
-  $liveStatus.textContent           = 'Fetching…';
-  $liveTime.textContent             = '';
 
-  // ── Monthly tab ──
+  // ── Digital Meters (water) ────────────────────────────
+  $('water-grid').innerHTML = '<div class="water-loading">Loading…</div>';
+
+  // ── Live details collapsible ──────────────────────────
+  $('live-eb').textContent      = '—';
+  $('live-dg').textContent      = '—';
+  $('live-current').textContent = '—';
+  $('est-eb-usage').textContent = '—';
+  $('est-dg-usage').textContent = '—';
+
+  // ── Monthly tab ───────────────────────────────────────
   $('month-selector').innerHTML = '';
   showMonthlyState('loading');
-  // Clear chart canvases so old flat's bars don't linger
+  // Monthly detail content
+  $('monthly-period').textContent       = '';
+  $('monthly-dates').textContent        = '';
+  $('monthly-total-amount').textContent = '—';
+  $('m-eb-units').textContent = '—'; $('m-eb-cost').textContent = '—';
+  $('m-dg-units').textContent = '—'; $('m-dg-cost').textContent = '—';
+  $('m-eb-prev').textContent  = '—'; $('m-eb-curr').textContent = '—';
+  $('m-dg-prev').textContent  = '—'; $('m-dg-curr').textContent = '—';
+  // Clear water rows from monthly table (keep header rows)
+  const wt = $('monthly-water-table');
+  if (wt) wt.querySelectorAll('.bill-row:not(.bill-header-row)').forEach(r => r.remove());
+  // Clear chart canvases
   ['trend-chart', 'water-trend-chart'].forEach(id => {
-    const c = $(id);
-    if (!c) return;
+    const c = $(id); if (!c) return;
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, c.width, c.height);
-    // Fill with chart background colour
     ctx.fillStyle = '#1e293b';
     ctx.fillRect(0, 0, c.width, c.height);
   });
 
-  // ── Recharge tab ──
+  // ── Recharge tab ─────────────────────────────────────
   $('rs-total').textContent = '—';
   $('rs-avg').textContent   = '—';
   $('rs-count').textContent = '—';
