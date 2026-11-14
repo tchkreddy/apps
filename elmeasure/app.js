@@ -1,5 +1,5 @@
 /**
- * B401 Meter PWA — app.js  v2.1
+ * B401 Meter PWA — app.js  v2.3
  * Native ES6 module. No build step.
  *
  * SAFE API CONTRACT:
@@ -129,6 +129,9 @@ function resetAll() {
   $('est-dg-cost').textContent      = '—';
   $('est-eb-usage').textContent     = '—';
   $('est-dg-usage').textContent     = '—';
+  const estProj = $('est-projected'); if (estProj) estProj.textContent = '—';
+  const liveRunway = $('live-runway'); if (liveRunway) liveRunway.textContent = '';
+  const powerCost = $('live-power-cost'); if (powerCost) powerCost.textContent = '';
   const note = $('estimate-note');
   note.textContent = '';
   note.classList.remove('visible');
@@ -308,10 +311,27 @@ async function loadLive() {
 }
 
 function renderLive(d) {
-  // Balance + power strip
+  // Balance strip
   $('live-balance').textContent     = fmtInt(d.pmb);
   $('live-wattage').textContent     = fmt(d.w, 1);
   $('live-energy-type').textContent = d.energytype === 2 ? 'W · DG' : 'W · EB';
+
+  // Live power cost rate (EB tariff only — that's what billing uses)
+  const ebTariffNow = (() => {
+    const months = getSortedMonths();
+    if (!months.length) return EB_TARIFF_FALLBACK;
+    const mis = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
+    return mis?.ebtariff || EB_TARIFF_FALLBACK;
+  })();
+  const watt    = Number(d.w) || 0;
+  const costHr  = (watt / 1000) * ebTariffNow;
+  const costDay = costHr * 24;
+  const powerCostEl = $('live-power-cost');
+  if (powerCostEl) {
+    powerCostEl.textContent = watt > 0
+      ? `₹${fmt(costHr, 2)}/hr · ₹${fmt(costDay, 0)}/day`
+      : '';
+  }
 
   // Details collapsible
   $('live-eb').textContent      = fmt(d.ebwh, 2);
@@ -341,15 +361,25 @@ function renderEstimate(live) {
   const dgUsed = Math.max(0, (live.dgwh ?? 0) - dgStart);
   const ebCost = ebUsed * ebTariff;
   const dgCost = dgUsed * dgTariff;
+  const actualTotal = ebCost + dgCost;
 
-  $('est-total').textContent    = fmt(ebCost + dgCost, 0);
-  $('est-eb-cost').textContent  = fmt(ebCost, 0);
-  $('est-dg-cost').textContent  = fmt(dgCost, 0);
-  $('est-eb-usage').textContent = fmt(ebUsed, 2);
-  $('est-dg-usage').textContent = fmt(dgUsed, 3);
+  // Days elapsed this month vs days in month → project full month cost
+  const now       = new Date();
+  const dayOfMonth = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const projected  = dayOfMonth > 0 ? (actualTotal / dayOfMonth) * daysInMonth : actualTotal;
+
+  // Hero: actual / projected
+  $('est-total').textContent     = fmt(actualTotal, 0);
+  const projEl = $('est-projected');
+  if (projEl) projEl.textContent = fmt(projected, 0);
+  $('est-eb-cost').textContent   = fmt(ebCost, 0);
+  $('est-dg-cost').textContent   = fmt(dgCost, 0);
+  $('est-eb-usage').textContent  = fmt(ebUsed, 2);
+  $('est-dg-usage').textContent  = fmt(dgUsed, 3);
 
   $('estimate-note').textContent =
-    `EB ₹${ebTariff}/kWh · DG ₹${dgTariff}/kWh · base from ${months[0]}`;
+    `EB ₹${ebTariff}/kWh · DG ₹${dgTariff}/kWh · day ${dayOfMonth}/${daysInMonth}`;
   $('estimate-note').classList.add('visible');
 
   // Also update prediction cards now that we have billing data
@@ -416,6 +446,15 @@ function renderPredictions(live) {
       <div class="pred-value">${rechargeNeeded === 0 ? 'Not needed ✅' : '₹' + fmtInt(rechargeNeeded)}</div>
       <div class="pred-sub">to cover till ${endNextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
     </div>`;
+
+  // Also update inline runway under Balance strip
+  const runwayEl = $('live-runway');
+  if (runwayEl && daysLeft != null) {
+    const runoutShort = runoutDate
+      ? runoutDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+      : '';
+    runwayEl.textContent = `Lasts ~${daysLeft}d (till ${runoutShort})`;
+  }
 }
 
 function renderWaterGrid(mis) {
@@ -424,23 +463,38 @@ function renderWaterGrid(mis) {
     grid.innerHTML = '<div class="water-loading">No monthly data</div>';
     return;
   }
-  const cards = [];
+
+  // Collect all 4 DI channels that have readings
+  const channels = [];
   for (let i = 1; i <= 4; i++) {
     const curr = mis[`di${i}presentreading`];
     if (curr == null) continue;
-    const label = (mis[`di${i}text`] || `DI${i}`).toUpperCase();
-    const cons  = mis[`di${i}consumption`] ?? 0;
-    cards.push(`
-      <div class="water-card">
-        <div class="water-card-label">💧 ${escHtml(label)}</div>
-        <div class="water-card-reading">${fmt(curr, 1)}</div>
-        <div class="water-card-unit">cumulative reading</div>
-        <div class="water-card-delta">+${fmt(cons, 1)} this month</div>
-      </div>`);
+    const prev = mis[`di${i}previousreading`] ?? curr;
+    const cons = Number(mis[`di${i}consumption`] ?? (curr - prev)) || 0;
+    channels.push({ i, curr: Number(curr), prev: Number(prev), cons });
   }
-  grid.innerHTML = cards.length
-    ? cards.join('')
-    : '<div class="water-loading">No DI meter data</div>';
+
+  if (!channels.length) {
+    grid.innerHTML = '<div class="water-loading">No DI meter data</div>';
+    return;
+  }
+
+  // Smart label: show channels that have non-zero consumption this month first.
+  // If none have consumption (e.g. billing DB had zeros), fall back to top-2 by reading value.
+  const withConsumption = channels.filter(c => c.cons > 0);
+  const toShow = withConsumption.length > 0
+    ? withConsumption.slice(0, 4)                                        // all active ones
+    : [...channels].sort((a, b) => b.curr - a.curr).slice(0, 2);        // top-2 by absolute reading
+
+  const cards = toShow.map(c => `
+    <div class="water-card">
+      <div class="water-card-label">💧 D${c.i}</div>
+      <div class="water-card-reading">${fmt(c.curr, 1)}</div>
+      <div class="water-card-unit">cumulative reading</div>
+      <div class="water-card-delta">${c.cons > 0 ? `+${fmt(c.cons, 1)} this month` : 'no change this month'}</div>
+    </div>`);
+
+  grid.innerHTML = cards.join('');
 }
 
 // ═══════════════════════════════════════════════════════

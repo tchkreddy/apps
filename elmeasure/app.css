@@ -212,7 +212,7 @@ canvas { display: block; width: 100% !important; }
   background: linear-gradient(135deg, #0f2041 0%, #0a1628 100%);
   border: 1px solid #1e3a5f;
   border-radius: var(--radius-lg);
-  padding: 24px 20px 16px;
+  padding: 20px 20px 16px;
   margin-bottom: 14px;
   position: relative;
   overflow: hidden;
@@ -227,28 +227,50 @@ canvas { display: block; width: 100% !important; }
 }
 .month-hero-total {
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 .month-hero-total-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: #7ba7d4;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
-.month-hero-total-value {
-  font-size: 56px;
+/* Actual / Projected display */
+.month-hero-both {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+}
+.month-hero-actual {
+  font-size: 48px;
   font-weight: 800;
   color: #60a5fa;
   line-height: 1;
   letter-spacing: -1px;
 }
-.month-hero-total-unit {
-  font-size: 14px;
-  color: #7ba7d4;
-  margin-top: 4px;
+.month-hero-sep {
+  font-size: 28px;
+  font-weight: 300;
+  color: #334e73;
+  line-height: 1;
+}
+.month-hero-proj {
+  font-size: 28px;
   font-weight: 600;
+  color: #3d6fa8;
+  line-height: 1;
+  letter-spacing: -0.5px;
+}
+.month-hero-unit-inline {
+  font-size: 13px;
+  color: #7ba7d4;
+  font-weight: 600;
+  margin-left: 2px;
+  align-self: flex-start;
+  margin-top: 4px;
 }
 .month-hero-breakdown {
   display: flex;
@@ -320,6 +342,13 @@ canvas { display: block; width: 100% !important; }
 .live-strip-unit {
   font-size: 11px;
   color: var(--text-muted);
+}
+.live-strip-sub {
+  font-size: 10px;
+  color: var(--accent-amber);
+  margin-top: 3px;
+  font-weight: 500;
+  min-height: 14px;
 }
 .live-strip-divider {
   width: 1px;
