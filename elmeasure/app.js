@@ -582,6 +582,10 @@ async function loadOneMonth(monthKey) {
     if (json.bills?.length > 0) {
       monthlyCache[monthKey] = json.bills[0];
       renderMonthSelector(); // progressive chip update
+      // DEBUG: log top-level keys of bills[0] to find name field
+      console.log('[elmeasure] bills[0] keys:', Object.keys(json.bills[0]));
+      console.log('[elmeasure] bills[0].mis keys:', json.bills[0].mis ? Object.keys(json.bills[0].mis) : 'no mis');
+      console.log('[elmeasure] bills[0] full:', JSON.stringify(json.bills[0]).slice(0, 800));
       // Update subtitle with owner name (once, from first bill that has it)
       const ownerName = json.bills[0]?.customername || json.bills[0]?.mis?.customername;
       if (ownerName) {
