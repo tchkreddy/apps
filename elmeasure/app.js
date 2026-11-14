@@ -394,7 +394,6 @@ function renderPredictions(live) {
   const months = getSortedMonths();
   const balance = Number(live?.pmb ?? 0);
 
-  // Need at least 1 month of history for avg
   if (months.length === 0) {
     pc.innerHTML = '<div class="pred-loading">Need billing data for predictions…</div>';
     return;
@@ -410,36 +409,55 @@ function renderPredictions(live) {
   const avgMonthlyBill = totalBill / recent.length;
   const dailyRate = avgMonthlyBill / 30;
 
-  // Days balance will last
-  const daysLeft = dailyRate > 0 ? Math.floor(balance / dailyRate) : null;
-  const runoutDate = daysLeft != null
-    ? new Date(Date.now() + daysLeft * 86400000)
-    : null;
+  // Last billed month's total
+  const lastMis = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
+  const lastMonthTotal = Number(lastMis?.grandtotal || lastMis?.ebtotalamount || 0) +
+                         Number(lastMis?.dgtotalamount || 0);
+  const lastMonthName  = months[0].split(', ')[0].slice(0, 3); // e.g. "Oct"
+
+  // Projected this month (passed in from renderEstimate via live)
+  // Recalculate here so renderPredictions is self-contained
+  const ebStart  = lastMis?.ebpresentreading  ?? 0;
+  const dgStart  = lastMis?.dgbpresentreading ?? 0;
+  const ebTariff = lastMis?.ebtariff  || EB_TARIFF_FALLBACK;
+  const dgTariff = lastMis?.dgtariff  || DG_TARIFF_FALLBACK;
+  const ebUsed   = Math.max(0, (live?.ebwh ?? 0) - ebStart);
+  const dgUsed   = Math.max(0, (live?.dgwh ?? 0) - dgStart);
+  const actualSoFar = ebUsed * ebTariff + dgUsed * dgTariff;
+  const now = new Date();
+  const dayOfMonth  = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const projected   = dayOfMonth > 0 ? (actualSoFar / dayOfMonth) * daysInMonth : actualSoFar;
+
+  // Comparison: projected this month vs last month
+  const delta    = projected - lastMonthTotal;
+  const absDelta = Math.abs(Math.round(delta));
+  const vsLabel  = lastMonthTotal > 0
+    ? (delta > 50
+        ? `↑₹${fmtInt(absDelta)} vs ${lastMonthName}`
+        : delta < -50
+          ? `↓₹${fmtInt(absDelta)} vs ${lastMonthName}`
+          : `≈ same as ${lastMonthName}`)
+    : '';
 
   // Days until end of NEXT month
-  const now = new Date();
-  const endNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0); // last day of next month
+  const endNextMonth  = new Date(now.getFullYear(), now.getMonth() + 2, 0);
   const daysToEndNext = Math.ceil((endNextMonth - now) / 86400000);
 
-  // Recharge needed = cost through end of next month minus current balance, rounded up to ₹500
-  const neededRaw = dailyRate * daysToEndNext - balance;
-  const rechargeNeeded = neededRaw > 0
-    ? Math.ceil(neededRaw / 500) * 500
-    : 0;
+  // Recharge needed
+  const neededRaw     = dailyRate * daysToEndNext - balance;
+  const rechargeNeeded = neededRaw > 0 ? Math.ceil(neededRaw / 500) * 500 : 0;
 
-  // Format runout date as "12 Nov" or "comfortable"
-  const runoutStr = runoutDate
-    ? runoutDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-    : '—';
-  const runoutLabel = daysLeft != null
-    ? (daysLeft >= daysToEndNext ? '✅ Beyond next month' : `~${daysLeft} days · till ${runoutStr}`)
-    : '—';
+  // Days balance lasts
+  const daysLeft   = dailyRate > 0 ? Math.floor(balance / dailyRate) : null;
+  const runoutDate = daysLeft != null ? new Date(Date.now() + daysLeft * 86400000) : null;
 
   pc.innerHTML = `
     <div class="pred-card">
-      <div class="pred-label">3-Month Avg Bill</div>
-      <div class="pred-value">₹${fmtInt(avgMonthlyBill)}</div>
-      <div class="pred-sub">₹${Math.round(dailyRate)}/day · basis for estimates</div>
+      <div class="pred-label">Spending</div>
+      <div class="pred-value">₹${fmtInt(avgMonthlyBill)}<span class="pred-value-unit">/mo avg</span></div>
+      <div class="pred-sub">Last ${lastMonthName} ₹${fmtInt(lastMonthTotal)}</div>
+      ${vsLabel ? `<div class="pred-vs ${delta > 50 ? 'pred-vs-up' : delta < -50 ? 'pred-vs-down' : ''}">${vsLabel} projected</div>` : ''}
     </div>
     <div class="pred-card ${rechargeNeeded === 0 ? 'pred-ok' : 'pred-warn'}">
       <div class="pred-label">Recharge</div>
@@ -447,7 +465,7 @@ function renderPredictions(live) {
       <div class="pred-sub">to cover till ${endNextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
     </div>`;
 
-  // Also update inline runway under Balance strip
+  // Inline runway under Balance strip
   const runwayEl = $('live-runway');
   if (runwayEl && daysLeft != null) {
     const runoutShort = runoutDate
@@ -570,6 +588,15 @@ async function loadOneMonth(monthKey) {
     if (json.bills?.length > 0) {
       monthlyCache[monthKey] = json.bills[0];
       renderMonthSelector(); // progressive chip update
+      // Update subtitle with owner name (once, from first bill that has it)
+      const ownerName = json.bills[0]?.customername || json.bills[0]?.mis?.customername;
+      if (ownerName) {
+        const sub = $('header-subtitle');
+        if (sub && !sub.dataset.ownerSet) {
+          sub.textContent = `Galaxy Apartments · ${ownerName}`;
+          sub.dataset.ownerSet = '1';
+        }
+      }
     }
   } catch (e) {
     console.warn(`loadOneMonth(${monthKey}):`, e.message);
