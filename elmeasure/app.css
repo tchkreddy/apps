@@ -309,6 +309,17 @@ canvas { display: block; width: 100% !important; }
 }
 .estimate-note.visible { display: block; }
 
+.estimate-vs {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+  text-align: center;
+  display: block;
+}
+.est-vs-up   { color: var(--accent-red); }
+.est-vs-down { color: var(--accent-green); }
+.est-vs-same { color: var(--text-muted); font-weight: 400; }
+
 /* ── Live Strip (Balance + Power) ────────────────── */
 .live-strip {
   background: var(--bg-card);

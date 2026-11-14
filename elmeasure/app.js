@@ -382,6 +382,32 @@ function renderEstimate(live) {
     `EB ₹${ebTariff}/kWh · DG ₹${dgTariff}/kWh · day ${dayOfMonth}/${daysInMonth}`;
   $('estimate-note').classList.add('visible');
 
+  // ↑/↓ vs last billed month — shown under hero card
+  const vsEl = $('estimate-vs');
+  if (vsEl) {
+    const lastMis       = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
+    const lastTotal     = Number(lastMis?.grandtotal || lastMis?.ebtotalamount || 0) +
+                          Number(lastMis?.dgtotalamount || 0);
+    const lastMonthName = months[0].split(', ')[0].slice(0, 3);
+    const delta         = projected - lastTotal;
+    const absDelta      = Math.abs(Math.round(delta));
+    if (lastTotal > 0) {
+      if (delta > 50) {
+        vsEl.textContent = `↑₹${absDelta} vs ${lastMonthName} projected`;
+        vsEl.className   = 'estimate-vs est-vs-up';
+      } else if (delta < -50) {
+        vsEl.textContent = `↓₹${absDelta} vs ${lastMonthName} projected`;
+        vsEl.className   = 'estimate-vs est-vs-down';
+      } else {
+        vsEl.textContent = `≈ same as ${lastMonthName} projected`;
+        vsEl.className   = 'estimate-vs est-vs-same';
+      }
+    } else {
+      vsEl.textContent = '';
+      vsEl.className   = 'estimate-vs';
+    }
+  }
+
   // Also update prediction cards now that we have billing data
   renderPredictions(live);
 }
@@ -429,17 +455,7 @@ function renderPredictions(live) {
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const projected   = dayOfMonth > 0 ? (actualSoFar / dayOfMonth) * daysInMonth : actualSoFar;
 
-  // Comparison: projected this month vs last month
-  const delta    = projected - lastMonthTotal;
-  const absDelta = Math.abs(Math.round(delta));
-  const vsLabel  = lastMonthTotal > 0
-    ? (delta > 50
-        ? `↑₹${fmtInt(absDelta)} vs ${lastMonthName}`
-        : delta < -50
-          ? `↓₹${fmtInt(absDelta)} vs ${lastMonthName}`
-          : `≈ same as ${lastMonthName}`)
-    : '';
-
+  // Comparison: projected this month vs last month — now shown under hero card, not here
   // Days until end of NEXT month
   const endNextMonth  = new Date(now.getFullYear(), now.getMonth() + 2, 0);
   const daysToEndNext = Math.ceil((endNextMonth - now) / 86400000);
@@ -457,7 +473,6 @@ function renderPredictions(live) {
       <div class="pred-label">Spending</div>
       <div class="pred-value">₹${fmtInt(avgMonthlyBill)}<span class="pred-value-unit">/mo avg</span></div>
       <div class="pred-sub">Last ${lastMonthName} ₹${fmtInt(lastMonthTotal)}</div>
-      ${vsLabel ? `<div class="pred-vs ${delta > 50 ? 'pred-vs-up' : delta < -50 ? 'pred-vs-down' : ''}">${vsLabel} projected</div>` : ''}
     </div>
     <div class="pred-card ${rechargeNeeded === 0 ? 'pred-ok' : 'pred-warn'}">
       <div class="pred-label">Recharge</div>
@@ -582,16 +597,14 @@ async function loadOneMonth(monthKey) {
     if (json.bills?.length > 0) {
       monthlyCache[monthKey] = json.bills[0];
       renderMonthSelector(); // progressive chip update
-      // DEBUG: log top-level keys of bills[0] to find name field
-      console.log('[elmeasure] bills[0] keys:', Object.keys(json.bills[0]));
-      console.log('[elmeasure] bills[0].mis keys:', json.bills[0].mis ? Object.keys(json.bills[0].mis) : 'no mis');
-      console.log('[elmeasure] bills[0] full:', JSON.stringify(json.bills[0]).slice(0, 800));
       // Update subtitle with owner name (once, from first bill that has it)
-      const ownerName = json.bills[0]?.customername || json.bills[0]?.mis?.customername;
+      const ownerName = json.bills[0]?.custname;
       if (ownerName) {
         const sub = $('header-subtitle');
         if (sub && !sub.dataset.ownerSet) {
-          sub.textContent = `Galaxy Apartments · ${ownerName}`;
+          // Strip "Mr./Mrs./Ms." prefix for brevity
+          const shortName = ownerName.replace(/^(Mr\.|Mrs\.|Ms\.|Dr\.)\s*/i, '');
+          sub.textContent = `Galaxy Apartments · ${shortName}`;
           sub.dataset.ownerSet = '1';
         }
       }
