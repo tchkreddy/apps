@@ -579,7 +579,7 @@ function renderWaterGrid(mis) {
       <div class="water-card-label">💧 D${c.i}</div>
       <div class="water-card-reading">${fmt(c.curr, 1)}</div>
       <div class="water-card-unit">cumulative reading</div>
-      <div class="water-card-delta">${c.cons > 0 ? `+${fmt(c.cons, 1)} that month` : 'no change that month'}</div>
+      <div class="water-card-delta">${c.cons > 0 ? `+${fmtInt(c.cons * 10)} L that month` : 'no change that month'}</div>
     </div>`).join('');
 }
 
@@ -826,7 +826,7 @@ function renderMonthlyDetail(monthKey) {
       waterRows += `
         <div class="bill-row">
           <span class="src-badge di-badge">${escHtml(label)}</span>
-          <span>${fmt(cons, 1)}</span>
+          <span>${fmt(cons, 1)} <span class="water-liters">${fmtInt(cons * 10)} L</span></span>
           <span>₹${fmt(cost, 0)}</span>
         </div>`;
     }
@@ -861,8 +861,9 @@ function renderWaterTrendChart() {
   drawBarChart('water-trend-chart', months.map(shortMonth), [{
     label: 'Water KL',
     data:  months.map(m => {
-      const mis = getMis(m);
-      return (mis?.di3consumption ?? 0) + (mis?.di4consumption ?? 0);
+      const mis   = getMis(m);
+      const units = (mis?.di3consumption ?? 0) + (mis?.di4consumption ?? 0);
+      return +(units / 100).toFixed(2); // units → KL  (1 unit = 10L, 1 KL = 1000L → ÷100)
     }),
     color: '#38bdf8'
   }]);

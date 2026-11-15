@@ -802,6 +802,11 @@ canvas { display: block; width: 100% !important; }
   color: var(--text-muted);
   margin-left: 4px;
 }
+.water-liters {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
 .daily-today .daily-day {
   color: #f59e0b;
   font-weight: 600;
