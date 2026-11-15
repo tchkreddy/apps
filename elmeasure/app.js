@@ -47,10 +47,15 @@ let liveData     = null;   // GetOnlineData response object
 let monthlyCache = {};     // { "Month, YYYY": billObj }
 let rechargeData = null;   // RCHistoryReport response object
 let selectedMonth = null;  // currently displayed month key
-let meterid       = null;  // numeric device ID (from first loaded bill)
+let meterid       = null;  // numeric device ID — set ONLY by bootstrap(), never elsewhere
 let dailyCache    = {};    // { "Nov-2026": [{label,value},...] }
 let selectedDailyMonth = null; // currently displayed daily month key
 let refreshTimer  = null;  // setInterval handle
+
+// Bootstrap promise — resolves after meterid is known.
+// Everything that depends on meterid awaits this instead of polling.
+let _bootstrapResolve = null;
+let bootstrapReady    = new Promise(res => { _bootstrapResolve = res; });
 
 // ═══════════════════════════════════════════════════════
 //  DOM SHORTCUTS
@@ -123,6 +128,8 @@ function resetAll() {
   dailyCache    = {};
   selectedDailyMonth = null;
   clearTimeout(refreshTimer);
+  // Reset bootstrap promise so dependents (Daily, CustomerDetail) wait for new flat's bootstrap
+  bootstrapReady = new Promise(res => { _bootstrapResolve = res; });
 
   // ── Header ────────────────────────────────────────────
   const sub = $('header-subtitle');
@@ -253,7 +260,11 @@ function onBadgeClick() {
       document.title = `${FLAT} — Meter`;
       restoreBadge(FLAT);
       resetAll();
-      // Fire all three independently — none depend on each other
+      // Phase 0: bootstrap extracts meterid + owner, then Phase 1 fires in parallel
+      loadBootstrap().then(() => {
+        loadCustomerDetail(); // refines owner name via dedicated API (best effort)
+        if (meterid && selectedDailyMonth) loadDailyMonth(selectedDailyMonth);
+      });
       loadLive();
       loadAllMonthly();
       loadRecharge();
@@ -318,9 +329,10 @@ function initTabs() {
       }
       if (target === 'daily') {
         renderDailyMonthSelector();
-        if (meterid && selectedDailyMonth && !dailyCache[selectedDailyMonth]) {
+        if (selectedDailyMonth && !dailyCache[selectedDailyMonth]) {
+          // loadDailyMonth internally awaits bootstrapReady, so safe to call now
           loadDailyMonth(selectedDailyMonth);
-        } else if (meterid && selectedDailyMonth && dailyCache[selectedDailyMonth]) {
+        } else if (selectedDailyMonth && dailyCache[selectedDailyMonth]) {
           renderDailyDetail(selectedDailyMonth);
           // Redraw chart (may have drawn at width=0 when tab was hidden)
           const trend = dailyCache[selectedDailyMonth];
@@ -588,6 +600,56 @@ function renderWaterGrid(mis) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  BOOTSTRAP — Phase 0 (runs before everything else)
+//  Fetches the most-recent bill to extract meterid and owner name.
+//  Resolves bootstrapReady so Daily tab and CustomerDetail can proceed.
+// ═══════════════════════════════════════════════════════
+async function loadBootstrap() {
+  const now     = new Date();
+  // Try up to 3 recent months to find a bill with a deviceid
+  for (let i = 0; i < 3; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${MONTH_NAMES[d.getMonth()]}, ${d.getFullYear()}`;
+    try {
+      const json = await safeGet('GetFromMonthlyBill', {
+        date: key, command: 'select', custid: FLAT
+      });
+      if (json.bills?.length > 0 && json.bills[0].deviceid) {
+        // ── Got meterid ──────────────────────────────────
+        meterid = json.bills[0].deviceid;
+
+        // Seed the daily month selector
+        if (!selectedDailyMonth) {
+          selectedDailyMonth = dailyKeyNow();
+          renderDailyMonthSelector();
+        }
+
+        // Set owner name in header from bill (fast path)
+        const ownerName = json.bills[0].custname;
+        if (ownerName) {
+          const sub = $('header-subtitle');
+          if (sub && !sub.dataset.ownerSet) {
+            sub.textContent = `Galaxy Apartments · ${ownerName.replace(/^(Mr\.|Mrs\.|Ms\.|Dr\.)\s*/i, '')}`;
+            sub.dataset.ownerSet = '1';
+          }
+        }
+
+        // Also cache this bill so loadAllMonthly skips it
+        if (!monthlyCache[key]) monthlyCache[key] = json.bills[0];
+
+        _bootstrapResolve(meterid); // ← unblocks Daily + CustomerDetail
+        return;
+      }
+    } catch (e) {
+      console.warn(`bootstrap(${key}):`, e.message);
+    }
+  }
+  // No bill found — resolve anyway so app doesn't hang (Daily tab will show empty)
+  console.warn('bootstrap: no bill with deviceid found in last 3 months');
+  _bootstrapResolve(null);
+}
+
+// ═══════════════════════════════════════════════════════
 //  MONTHLY TAB
 // ═══════════════════════════════════════════════════════
 function getSortedMonths() {
@@ -660,29 +722,7 @@ async function loadOneMonth(monthKey) {
     if (json.bills?.length > 0) {
       monthlyCache[monthKey] = json.bills[0];
       renderMonthSelector(); // progressive chip update
-      // Capture meterid from first bill (used for daily trend + customer detail)
-      if (!meterid && json.bills[0]?.deviceid) {
-        meterid = json.bills[0].deviceid;
-        loadCustomerDetail();  // fetch owner name now we have meterid
-        // Also seed daily tab with current month
-        if (!selectedDailyMonth) {
-          const now = new Date();
-          selectedDailyMonth = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getMonth()]}-${now.getFullYear()}`;
-          renderDailyMonthSelector();
-          loadDailyMonth(selectedDailyMonth);
-        }
-      }
-      // Update subtitle with owner name (once, from first bill that has it)
-      const ownerName = json.bills[0]?.custname;
-      if (ownerName) {
-        const sub = $('header-subtitle');
-        if (sub && !sub.dataset.ownerSet) {
-          // Strip "Mr./Mrs./Ms." prefix for brevity
-          const shortName = ownerName.replace(/^(Mr\.|Mrs\.|Ms\.|Dr\.)\s*/i, '');
-          sub.textContent = `Galaxy Apartments · ${shortName}`;
-          sub.dataset.ownerSet = '1';
-        }
-      }
+      // meterid + owner name are handled exclusively by loadBootstrap() — not here
     }
   } catch (e) {
     console.warn(`loadOneMonth(${monthKey}):`, e.message);
@@ -982,7 +1022,11 @@ function renderDailyMonthSelector() {
 }
 
 async function loadDailyMonth(monthKey) {
-  if (!meterid) return; // need meterid from billing data first
+  await bootstrapReady; // wait for meterid (resolved by loadBootstrap)
+  if (!meterid) {
+    $('daily-table').innerHTML = '<div class="daily-loading">Meter ID unavailable — no billing data found.</div>';
+    return;
+  }
   $('daily-table').innerHTML = '<div class="daily-loading"><div class="spinner"></div><span>Loading…</span></div>';
 
   try {
@@ -1048,6 +1092,7 @@ function renderDailyDetail(monthKey) {
 
 // ── Customer Detail (owner name via GetCustomerDetail) ─
 async function loadCustomerDetail() {
+  await bootstrapReady; // wait for meterid (resolved by loadBootstrap)
   if (!meterid) return;
   try {
     const json = await safeGet('GetCustomerDetail', { meterid });
@@ -1176,10 +1221,16 @@ async function init() {
     scheduleAutoRefresh();
   });
 
-  // All three start in parallel — none depend on each other
-  loadLive();
-  loadAllMonthly();
-  loadRecharge();
+  // ── Phased loading ─────────────────────────────────────
+  // Phase 0 (sequential): bootstrap — fetch one bill to extract meterid + owner name.
+  // Phase 1 (parallel):   everything else fires as soon as bootstrap resolves.
+  loadBootstrap().then(() => {
+    loadCustomerDetail(); // refines owner name via dedicated API (best effort)
+    if (meterid && selectedDailyMonth) loadDailyMonth(selectedDailyMonth);
+  });
+  loadLive();       // independent — no deps
+  loadAllMonthly(); // independent — skips bootstrap's cached month automatically
+  loadRecharge();   // independent — no deps
 
   scheduleAutoRefresh();
 }
