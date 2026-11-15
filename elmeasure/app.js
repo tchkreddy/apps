@@ -1,25 +1,30 @@
 /**
- * B401 Meter PWA — app.js  v2.3
+ * B401 Meter PWA — app.js  v2.4
  * Native ES6 module. No build step.
  *
  * SAFE API CONTRACT:
- *   ✅ GetOnlineData            — read-only live snapshot
+ *   ✅ GetOnlineData              — read-only live snapshot
  *   ✅ GetFromMonthlyBill (select) — read-only historical bills
- *   ✅ RCHistoryReport          — read-only recharge history
- *   ❌ MeterStatus              — NEVER CALLED (toggles meter power)
- *   ❌ command:"update"         — NEVER called
- *
- * ACCESS CONTROL:
- *   Proxy requires ?secret=TOKEN. Token read from URL #hash on first visit,
- *   then persisted to localStorage so installed PWA works without the hash.
+ *   ✅ RCHistoryReport            — read-only recharge history
+ *   ✅ GetDailyMonthlyTrend       — read-only daily trend
+ *   ✅ GetCustomerDetail          — read-only customer info
+ *   ❌ MeterStatus                — NEVER CALLED (toggles meter power)
+ *   ❌ command:"update"           — NEVER called
  */
 
 // ═══════════════════════════════════════════════════════
-//  CONFIG & BOOTSTRAP
+//  CONFIG
 // ═══════════════════════════════════════════════════════
-const PROXY_URL = 'https://script.google.com/macros/s/AKfycbzMkvnwPWKb4cttij712tL1vNiio2L9bue9S2nQZeA23HVsgZsxsn4R43ayMKzLf9gl/exec';
-const LS_KEY    = 'em_secret';
-const LS_FLAT   = 'em_flat';
+const PROXY_URL          = 'https://script.google.com/macros/s/AKfycbzMkvnwPWKb4cttij712tL1vNiio2L9bue9S2nQZeA23HVsgZsxsn4R43ayMKzLf9gl/exec';
+const LS_KEY             = 'em_secret';
+const LS_FLAT            = 'em_flat';
+const EB_TARIFF_FALLBACK = 8.45;
+const DG_TARIFF_FALLBACK = 32.0;
+const MONTH_NAMES        = ['January','February','March','April','May','June',
+                            'July','August','September','October','November','December'];
+const MON_SHORT          = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MON_FULL           = ['January','February','March','April','May','June',
+                            'July','August','September','October','November','December'];
 
 // Seed secret from URL hash → localStorage (runs once on load)
 (function seedSecret() {
@@ -33,43 +38,39 @@ const LS_FLAT   = 'em_flat';
 const ACCESS_SECRET = localStorage.getItem(LS_KEY) || '';
 let   FLAT          = (localStorage.getItem(LS_FLAT) || 'B401').toUpperCase();
 
-const EB_TARIFF_FALLBACK = 8.45;
-const DG_TARIFF_FALLBACK = 32.0;
-const MONTH_NAMES = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December'
-];
-
 // ═══════════════════════════════════════════════════════
 //  MUTABLE STATE  (all cleared by resetAll() on flat change)
 // ═══════════════════════════════════════════════════════
-let liveData     = null;   // GetOnlineData response object
-let monthlyCache = {};     // { "Month, YYYY": billObj }
-let rechargeData = null;   // RCHistoryReport response object
-let selectedMonth = null;  // currently displayed month key
-let meterid       = null;  // numeric device ID — set ONLY by bootstrap(), never elsewhere
-let dailyCache    = {};    // { "Nov-2026": [{label,value},...] }
-let selectedDailyMonth = null; // currently displayed daily month key
-let refreshTimer  = null;  // setInterval handle
+let liveData          = null;   // GetOnlineData response object
+let monthlyCache      = {};     // { "Month, YYYY": billObj }
+let rechargeData      = null;   // RCHistoryReport response
+let selectedMonth     = null;   // currently displayed month key
+let meterid           = null;   // numeric device ID — set by loadAllMonthly Phase 0
+let dailyCache        = {};     // { "Nov-2026": [{label,value},...] }
+let selectedDailyMonth = null;  // currently displayed daily month key
+let refreshTimer      = null;   // setTimeout handle
 
-// Bootstrap promise — resolves after meterid is known.
-// Everything that depends on meterid awaits this instead of polling.
-let _bootstrapResolve = null;
-let bootstrapReady    = new Promise(res => { _bootstrapResolve = res; });
+// meteridReady: plain deferred — resolved once meterid is known
+// Replace each time on flat change so old awaiters don't interfere
+let meteridReady = makeDeferred();
+
+// HTML snapshots taken at DOMContentLoaded — restored by resetAll()
+let _snapshots = null;
 
 // ═══════════════════════════════════════════════════════
 //  DOM SHORTCUTS
 // ═══════════════════════════════════════════════════════
 const $ = id => document.getElementById(id);
-const $refresh    = $('refresh-btn');
-const $toast      = $('toast');
-const $liveStatus = $('live-status-text');
-const $liveDot    = $('live-status-dot');
-const $liveTime   = $('live-timestamp');
 
 // ═══════════════════════════════════════════════════════
 //  UTILITIES
 // ═══════════════════════════════════════════════════════
+function makeDeferred() {
+  let resolve;
+  const promise = new Promise(res => { resolve = res; });
+  return { promise, resolve };
+}
+
 function fmt(n, dec = 2) {
   if (n == null || n === '' || Number.isNaN(Number(n))) return '—';
   return Number(n).toLocaleString('en-IN', { minimumFractionDigits: dec, maximumFractionDigits: dec });
@@ -87,10 +88,67 @@ function escHtml(str) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function showToast(msg, duration = 2500) {
-  $toast.textContent = msg;
-  $toast.classList.add('show');
-  setTimeout(() => $toast.classList.remove('show'), duration);
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
 }
+
+/** getMis(key) — returns the mis sub-object or the bill itself */
+function getMis(key) {
+  const b = monthlyCache[key];
+  return b ? (b.mis ?? b) : null;
+}
+
+/** Returns months in monthlyCache sorted newest → oldest */
+function getSortedMonths() {
+  return Object.keys(monthlyCache).sort((a, b) => {
+    const p = s => { const [mn, yr] = s.split(', '); return new Date(`${mn} 1, ${yr}`); };
+    return p(b) - p(a);
+  });
+}
+
+/** "September, 2026" → "Sep '26" */
+function shortMonth(key) {
+  const [mn, yr] = key.split(', ');
+  return `${mn.slice(0, 3)} '${yr.slice(2)}`;
+}
+
+/** Current month as "Nov-2026" */
+function dailyKeyNow() {
+  const d = new Date();
+  return `${MON_SHORT[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+/** "Nov-2026" → "November 2026" */
+function dailyKeyToDisplay(key) {
+  const [mon, yr] = key.split('-');
+  const idx = MON_SHORT.indexOf(mon);
+  return idx >= 0 ? `${MON_FULL[idx]} ${yr}` : key;
+}
+
+/** Last n months as "Mon-YYYY" keys, newest first */
+function getDailyMonthKeys(n = 12) {
+  const keys = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    keys.push(`${MON_SHORT[d.getMonth()]}-${d.getFullYear()}`);
+  }
+  return keys;
+}
+
+/** Strips title prefix, sets header subtitle */
+function setOwnerName(name) {
+  const sub = $('header-subtitle');
+  if (!sub || sub.dataset.ownerSet) return;
+  const short = name.replace(/^(Mr\.|Mrs\.|Ms\.|Dr\.)\s*/i, '');
+  sub.textContent    = `Galaxy Apartments · ${short}`;
+  sub.dataset.ownerSet = '1';
+}
+
+function showEl(id) { const el = $(id); if (el) el.style.display = ''; }
+function hideEl(id) { const el = $(id); if (el) el.style.display = 'none'; }
 
 // ═══════════════════════════════════════════════════════
 //  SAFE API CALL
@@ -115,201 +173,145 @@ async function safeGet(taskid, params) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  FULL RESET  — clears all state + every DOM element
-//  Called on flat number change before reloading all data
+//  RESET  — restores DOM snapshots, resets all JS state
 // ═══════════════════════════════════════════════════════
 function resetAll() {
-  // ── JS state ──────────────────────────────────────────
-  liveData      = null;
-  monthlyCache  = {};
-  rechargeData  = null;
-  selectedMonth = null;
-  meterid       = null;
-  dailyCache    = {};
+  // JS state
+  liveData          = null;
+  monthlyCache      = {};
+  rechargeData      = null;
+  selectedMonth     = null;
+  meterid           = null;
+  dailyCache        = {};
   selectedDailyMonth = null;
   clearTimeout(refreshTimer);
-  // Reset bootstrap promise so dependents (Daily, CustomerDetail) wait for new flat's bootstrap
-  bootstrapReady = new Promise(res => { _bootstrapResolve = res; });
+  meteridReady = makeDeferred(); // new deferred for new flat's meterid
 
-  // ── Header ────────────────────────────────────────────
-  const sub = $('header-subtitle');
-  if (sub) {
-    sub.textContent = 'Galaxy Apartments';
-    delete sub.dataset.ownerSet;          // allow re-fetch for new flat
+  // Restore DOM snapshots
+  if (_snapshots) {
+    ['tab-live', 'tab-monthly', 'tab-daily', 'tab-recharge'].forEach(id => {
+      const el = $(id);
+      if (el && _snapshots[id] != null) el.innerHTML = _snapshots[id];
+    });
+    const sub = $('header-subtitle');
+    if (sub) {
+      sub.textContent = _snapshots['header-subtitle'] || 'Galaxy Apartments';
+      delete sub.dataset.ownerSet;
+    }
+    // Status bar
+    const dot = $('live-status-dot');
+    const txt = $('live-status-text');
+    const ts  = $('live-timestamp');
+    if (dot) dot.className = 'status-dot';
+    if (txt) txt.textContent = 'Fetching…';
+    if (ts)  ts.textContent = '';
   }
-
-  // ── Status bar ────────────────────────────────────────
-  $liveDot.className      = 'status-dot';
-  $liveStatus.textContent = 'Fetching…';
-  $liveTime.textContent   = '';
-
-  // ── This Month hero card ──────────────────────────────
-  $('est-total').textContent     = '—';
-  $('est-projected').textContent = '—';
-  $('est-eb-cost').textContent   = '—';
-  $('est-dg-cost').textContent   = '—';
-  const note = $('estimate-note');
-  note.textContent = '';
-  note.classList.remove('visible');
-  const vsEl = $('estimate-vs');
-  if (vsEl) { vsEl.textContent = ''; vsEl.className = 'estimate-vs'; }
-
-  // ── Live strip (Balance + Power) ──────────────────────
-  $('live-balance').textContent     = '—';
-  $('live-runway').textContent      = '';
-  $('live-wattage').textContent     = '—';
-  $('live-energy-type').textContent = 'W';
-  $('live-power-cost').textContent  = '';
-
-  // ── Estimates section ─────────────────────────────────
-  const pc = $('prediction-cards');
-  if (pc) pc.innerHTML = '<div class="pred-loading">Calculating…</div>';
-
-  // ── Digital Meters (water) ────────────────────────────
-  $('water-grid').innerHTML = '<div class="water-loading">Loading…</div>';
-
-  // ── Live details collapsible ──────────────────────────
-  $('live-eb').textContent      = '—';
-  $('live-dg').textContent      = '—';
-  $('live-current').textContent = '—';
-  $('est-eb-usage').textContent = '—';
-  $('est-dg-usage').textContent = '—';
-
-  // ── Monthly tab ───────────────────────────────────────
-  $('month-selector').innerHTML = '';
-  showMonthlyState('loading');
-  // Monthly detail content
-  $('monthly-period').textContent       = '';
-  $('monthly-dates').textContent        = '';
-  $('monthly-total-amount').textContent = '—';
-  $('m-eb-units').textContent = '—'; $('m-eb-cost').textContent = '—';
-  $('m-dg-units').textContent = '—'; $('m-dg-cost').textContent = '—';
-  $('m-eb-prev').textContent  = '—'; $('m-eb-curr').textContent = '—';
-  $('m-dg-prev').textContent  = '—'; $('m-dg-curr').textContent = '—';
-  // Clear water rows from monthly table (keep header rows)
-  const wt = $('monthly-water-table');
-  if (wt) wt.querySelectorAll('.bill-row:not(.bill-header-row)').forEach(r => r.remove());
-  // Clear chart canvases
-  ['trend-chart', 'water-trend-chart'].forEach(id => {
-    const c = $(id); if (!c) return;
-    const ctx = c.getContext('2d');
-    ctx.clearRect(0, 0, c.width, c.height);
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(0, 0, c.width, c.height);
-  });
-
-  // ── Daily tab ─────────────────────────────────────────
-  $('daily-month-selector').innerHTML = '';
-  $('daily-total').textContent = '—';
-  $('daily-avg').textContent   = '—';
-  $('daily-cost').textContent  = '—';
-  $('daily-table').innerHTML   = '<div class="daily-loading"><div class="spinner"></div><span>Loading…</span></div>';
-  const dc = $('daily-chart');
-  if (dc) { const ctx = dc.getContext('2d'); ctx.clearRect(0,0,dc.width,dc.height); ctx.fillStyle='#1e293b'; ctx.fillRect(0,0,dc.width,dc.height); }
-
-  // ── Recharge tab ─────────────────────────────────────
-  $('rs-total').textContent = '—';
-  $('rs-avg').textContent   = '—';
-  $('rs-count').textContent = '—';
-  $('recharge-list').innerHTML =
-    '<div class="recharge-loading"><div class="spinner"></div><span>Loading…</span></div>';
 }
 
 // ═══════════════════════════════════════════════════════
-//  FLAT BADGE — tappable, inline edit
+//  FLAT BADGE — tappable, inline edit (merged into one fn)
 // ═══════════════════════════════════════════════════════
 function initFlatBadge() {
-  attachBadgeClick();
-}
-
-function attachBadgeClick() {
   const badge = $('flat-badge');
   if (!badge) return;
   badge.style.cursor = 'pointer';
   badge.title = 'Tap to change flat';
-  badge.addEventListener('click', onBadgeClick, { once: true });
-}
 
-function onBadgeClick() {
-  const badge = $('flat-badge');
-  if (!badge) return;
+  badge.addEventListener('click', function onBadgeClick() {
+    const badge = $('flat-badge');
+    if (!badge) return;
 
-  const input = document.createElement('input');
-  input.id    = 'flat-input';
-  input.className = 'flat-badge-input';
-  input.value     = FLAT;
-  input.maxLength = 10;
-  input.setAttribute('autocapitalize', 'characters');
-  input.setAttribute('autocorrect', 'off');
-  input.setAttribute('spellcheck', 'false');
-  input.setAttribute('autocomplete', 'off');
+    const input = document.createElement('input');
+    input.id          = 'flat-input';
+    input.className   = 'flat-badge-input';
+    input.value       = FLAT;
+    input.maxLength   = 10;
+    input.setAttribute('autocapitalize', 'characters');
+    input.setAttribute('autocorrect', 'off');
+    input.setAttribute('spellcheck', 'false');
+    input.setAttribute('autocomplete', 'off');
 
-  badge.replaceWith(input);
-  input.focus();
-  input.select();
+    badge.replaceWith(input);
+    input.focus();
+    input.select();
 
-  let committed = false;
+    let committed = false;
 
-  function commit() {
-    if (committed) return;
-    committed = true;
-    const val = input.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (val && val !== FLAT) {
-      FLAT = val;
-      localStorage.setItem(LS_FLAT, FLAT);
-      document.title = `${FLAT} — Meter`;
-      restoreBadge(FLAT);
-      resetAll();
-      // Phase 0: bootstrap extracts meterid + owner, then Phase 1 fires in parallel
-      loadBootstrap().then(() => {
-        loadCustomerDetail(); // refines owner name via dedicated API (best effort)
-        if (meterid && selectedDailyMonth) loadDailyMonth(selectedDailyMonth);
-      });
-      loadLive();
-      loadAllMonthly();
-      loadRecharge();
-    } else {
+    function restoreBadge(text) {
+      const el = $('flat-input') || $('flat-badge');
+      if (!el) return;
+      const span = document.createElement('span');
+      span.id          = 'flat-badge';
+      span.className   = 'flat-badge';
+      span.textContent = text;
+      el.replaceWith(span);
+      initFlatBadge();
+    }
+
+    function commit() {
+      if (committed) return;
+      committed = true;
+      const val = input.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (val && val !== FLAT) {
+        FLAT = val;
+        localStorage.setItem(LS_FLAT, FLAT);
+        document.title = `${FLAT} — Meter`;
+        restoreBadge(FLAT);
+        resetAll();
+        startAll();
+      } else {
+        restoreBadge(FLAT);
+      }
+    }
+
+    function cancel() {
+      if (committed) return;
+      committed = true;
       restoreBadge(FLAT);
     }
-  }
 
-  function cancel() {
-    if (committed) return;
-    committed = true;
-    restoreBadge(FLAT);
-  }
-
-  // Force uppercase while typing
-  input.addEventListener('input', () => {
-    const pos = input.selectionStart;
-    input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    try { input.setSelectionRange(pos, pos); } catch (_) {}
-  });
-
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter')  { e.preventDefault(); commit(); }
-    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-  });
-
-  // Blur = cancel (slight delay so Enter's blur doesn't double-fire)
-  input.addEventListener('blur', () => setTimeout(cancel, 120));
-}
-
-function restoreBadge(text) {
-  const el = $('flat-input') || $('flat-badge');
-  if (!el) return;
-  const span = document.createElement('span');
-  span.id        = 'flat-badge';
-  span.className = 'flat-badge';
-  span.textContent = text;
-  el.replaceWith(span);
-  attachBadgeClick();
+    input.addEventListener('input', () => {
+      const pos = input.selectionStart;
+      input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      try { input.setSelectionRange(pos, pos); } catch (_) {}
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    input.addEventListener('blur', () => setTimeout(cancel, 120));
+  }, { once: true });
 }
 
 // ═══════════════════════════════════════════════════════
 //  TAB NAV
 // ═══════════════════════════════════════════════════════
 function initTabs() {
+  const tabLoaders = {
+    monthly: () => {
+      if (Object.keys(monthlyCache).length === 0) {
+        loadAllMonthly();
+      } else {
+        // Redraw charts now that tab is visible (may have drawn at width=0)
+        renderTrendChart();
+        renderWaterTrendChart();
+      }
+    },
+    daily: () => {
+      renderDailyMonthSelector();
+      if (selectedDailyMonth) {
+        if (dailyCache[selectedDailyMonth]) {
+          renderDailyDetail(selectedDailyMonth);
+        } else {
+          loadDailyMonth(selectedDailyMonth);
+        }
+      }
+    },
+    recharge: () => {
+      if (!rechargeData) loadRecharge();
+    },
+  };
+
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       const target = tab.dataset.tab;
@@ -320,46 +322,39 @@ function initTabs() {
       document.querySelectorAll('.tab-panel').forEach(p => {
         p.classList.toggle('active', p.id === `tab-${target}`);
       });
-      // Lazy-load only if not already loaded
-      if (target === 'monthly' && Object.keys(monthlyCache).length === 0) loadAllMonthly();
-      if (target === 'monthly' && Object.keys(monthlyCache).length > 0) {
-        // Redraw charts now that tab is visible (they may have drawn at width=0)
-        renderTrendChart();
-        renderWaterTrendChart();
-      }
-      if (target === 'daily') {
-        renderDailyMonthSelector();
-        if (selectedDailyMonth && !dailyCache[selectedDailyMonth]) {
-          // loadDailyMonth internally awaits bootstrapReady, so safe to call now
-          loadDailyMonth(selectedDailyMonth);
-        } else if (selectedDailyMonth && dailyCache[selectedDailyMonth]) {
-          renderDailyDetail(selectedDailyMonth);
-          // Redraw chart (may have drawn at width=0 when tab was hidden)
-          const trend = dailyCache[selectedDailyMonth];
-          if (trend) {
-            const now = new Date();
-            const isCurrent = selectedDailyMonth === dailyKeyNow();
-            const todayDay  = isCurrent ? String(now.getDate()).padStart(2,'0') : null;
-            drawBarChart('daily-chart', trend.map(r => r.label), [{
-              label: 'kWh',
-              data:  trend.map(r => Number(r.value) || 0),
-              color: trend.map(r => r.label === todayDay ? '#f59e0b' : '#3b82f6')
-            }]);
-          }
-        }
-      }
-      if (target === 'recharge' && !rechargeData) loadRecharge();
+      tabLoaders[target]?.();
     });
   });
+}
+
+// ═══════════════════════════════════════════════════════
+//  START ALL — fires on init and on flat change
+// ═══════════════════════════════════════════════════════
+function startAll() {
+  // These three run in parallel — no interdependencies
+  loadLive();
+  loadAllMonthly(); // Phase 0 inside here resolves meteridReady
+  loadRecharge();
+
+  // After meterid is known, load customer detail + daily
+  meteridReady.promise.then(() => {
+    loadCustomerDetail();
+    if (selectedDailyMonth) loadDailyMonth(selectedDailyMonth);
+  });
+
+  scheduleAutoRefresh();
 }
 
 // ═══════════════════════════════════════════════════════
 //  LIVE TAB
 // ═══════════════════════════════════════════════════════
 async function loadLive() {
-  $liveDot.className      = 'status-dot loading';
-  $liveStatus.textContent = 'Fetching…';
-  $refresh.classList.add('spinning');
+  const dot = $('live-status-dot');
+  const txt = $('live-status-text');
+  const refreshBtn = $('refresh-btn');
+  if (dot) dot.className = 'status-dot loading';
+  if (txt) txt.textContent = 'Fetching…';
+  if (refreshBtn) refreshBtn.classList.add('spinning');
 
   try {
     const json = await safeGet('GetOnlineData', { arguments: [{ custid: FLAT }] });
@@ -367,39 +362,41 @@ async function loadLive() {
     if (!liveData) throw new Error('Empty response');
 
     renderLive(liveData);
-    $liveDot.className      = 'status-dot ok';
-    $liveStatus.textContent = 'Live';
-    $liveTime.textContent   = fmtTime();
+    if (dot) dot.className = 'status-dot ok';
+    if (txt) txt.textContent = 'Live';
+    const ts = $('live-timestamp');
+    if (ts) ts.textContent = fmtTime();
   } catch (e) {
     if (e.isUnauthorized) {
       localStorage.removeItem(LS_KEY);
       showLockScreen('Wrong access secret. Re-open via your private bookmarked URL.');
       return;
     }
-    $liveDot.className      = 'status-dot err';
-    $liveStatus.textContent = 'Error — tap ↻';
+    if (dot) dot.className = 'status-dot err';
+    if (txt) txt.textContent = 'Error — tap ↻';
     console.error('loadLive:', e);
     showToast('⚠️ Could not fetch live data');
   } finally {
-    $refresh.classList.remove('spinning');
+    if (refreshBtn) refreshBtn.classList.remove('spinning');
   }
 }
 
 function renderLive(d) {
   // Balance strip
-  $('live-balance').textContent     = fmtInt(d.pmb);
-  $('live-wattage').textContent     = fmt(d.w, 1);
-  $('live-energy-type').textContent = d.energytype === 2 ? 'W · DG' : 'W · EB';
+  const balEl = $('live-balance');
+  const wEl   = $('live-wattage');
+  const etEl  = $('live-energy-type');
+  if (balEl) balEl.textContent = fmtInt(d.pmb);
+  if (wEl)   wEl.textContent   = fmt(d.w, 1);
+  if (etEl)  etEl.textContent  = d.energytype === 2 ? 'W · DG' : 'W · EB';
 
-  // Live power cost rate (EB tariff only — that's what billing uses)
-  const ebTariffNow = (() => {
-    const months = getSortedMonths();
-    if (!months.length) return EB_TARIFF_FALLBACK;
-    const mis = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
-    return mis?.ebtariff || EB_TARIFF_FALLBACK;
-  })();
-  const watt    = Number(d.w) || 0;
-  const costHr  = (watt / 1000) * ebTariffNow;
+  // Live power cost rate
+  const months = getSortedMonths();
+  const ebTariffNow = months.length
+    ? (getMis(months[0])?.ebtariff || EB_TARIFF_FALLBACK)
+    : EB_TARIFF_FALLBACK;
+  const watt   = Number(d.w) || 0;
+  const costHr = (watt / 1000) * ebTariffNow;
   const costDay = costHr * 24;
   const powerCostEl = $('live-power-cost');
   if (powerCostEl) {
@@ -409,63 +406,74 @@ function renderLive(d) {
   }
 
   // Details collapsible
-  $('live-eb').textContent      = fmt(d.ebwh, 2);
-  $('live-dg').textContent      = fmt(d.dgwh, 3);
-  $('live-current').textContent = fmt(d.a, 3);
+  const ebEl  = $('live-eb');
+  const dgEl  = $('live-dg');
+  const ampEl = $('live-current');
+  if (ebEl)  ebEl.textContent  = fmt(d.ebwh, 2);
+  if (dgEl)  dgEl.textContent  = fmt(d.dgwh, 3);
+  if (ampEl) ampEl.textContent = fmt(d.a, 3);
 
-  // Hero estimate (uses monthlyCache if available)
+  // Hero estimate + predictions (use shared calc)
   renderEstimate(d);
   renderPredictions(d);
 }
 
+// ── Shared calc — eliminates the duplication between renderEstimate & renderPredictions ──
+function calcCurrentMonth(live, mis) {
+  const ebStart   = mis?.ebpresentreading  ?? 0;
+  const dgStart   = mis?.dgbpresentreading ?? 0;
+  const ebTariff  = mis?.ebtariff  || EB_TARIFF_FALLBACK;
+  const dgTariff  = mis?.dgtariff  || DG_TARIFF_FALLBACK;
+  const ebUsed    = Math.max(0, (live?.ebwh ?? 0) - ebStart);
+  const dgUsed    = Math.max(0, (live?.dgwh ?? 0) - dgStart);
+  const ebCost    = ebUsed * ebTariff;
+  const dgCost    = dgUsed * dgTariff;
+  const actual    = ebCost + dgCost;
+  const now       = new Date();
+  const dayOfMonth  = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const projected   = dayOfMonth > 0 ? (actual / dayOfMonth) * daysInMonth : actual;
+  return { ebUsed, dgUsed, ebCost, dgCost, actual, projected, dayOfMonth, daysInMonth, ebTariff, dgTariff };
+}
+
 function renderEstimate(live) {
   const months = getSortedMonths();
+  const noteEl = $('estimate-note');
   if (months.length === 0) {
-    $('estimate-note').textContent = 'Loading billing data for estimate…';
-    $('estimate-note').classList.add('visible');
+    if (noteEl) { noteEl.textContent = 'Loading billing data for estimate…'; noteEl.classList.add('visible'); }
     return;
   }
 
-  const mis      = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
-  const ebStart  = mis.ebpresentreading  ?? 0;
-  const dgStart  = mis.dgbpresentreading ?? 0;
-  const ebTariff = mis.ebtariff  || EB_TARIFF_FALLBACK;
-  const dgTariff = mis.dgtariff  || DG_TARIFF_FALLBACK;
+  const mis = getMis(months[0]);
+  const { ebUsed, dgUsed, ebCost, dgCost, actual, projected, dayOfMonth, daysInMonth, ebTariff, dgTariff }
+    = calcCurrentMonth(live, mis);
 
-  const ebUsed = Math.max(0, (live.ebwh ?? 0) - ebStart);
-  const dgUsed = Math.max(0, (live.dgwh ?? 0) - dgStart);
-  const ebCost = ebUsed * ebTariff;
-  const dgCost = dgUsed * dgTariff;
-  const actualTotal = ebCost + dgCost;
-
-  // Days elapsed this month vs days in month → project full month cost
-  const now       = new Date();
-  const dayOfMonth = now.getDate();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const projected  = dayOfMonth > 0 ? (actualTotal / dayOfMonth) * daysInMonth : actualTotal;
-
-  // Hero: actual / projected
-  $('est-total').textContent     = fmt(actualTotal, 0);
+  const totEl  = $('est-total');
   const projEl = $('est-projected');
+  const ebCEl  = $('est-eb-cost');
+  const dgCEl  = $('est-dg-cost');
+  const ebUEl  = $('est-eb-usage');
+  const dgUEl  = $('est-dg-usage');
+  if (totEl)  totEl.textContent  = fmt(actual, 0);
   if (projEl) projEl.textContent = fmt(projected, 0);
-  $('est-eb-cost').textContent   = fmt(ebCost, 0);
-  $('est-dg-cost').textContent   = fmt(dgCost, 0);
-  $('est-eb-usage').textContent  = fmt(ebUsed, 2);
-  $('est-dg-usage').textContent  = fmt(dgUsed, 3);
+  if (ebCEl)  ebCEl.textContent  = fmt(ebCost, 0);
+  if (dgCEl)  dgCEl.textContent  = fmt(dgCost, 0);
+  if (ebUEl)  ebUEl.textContent  = fmt(ebUsed, 2);
+  if (dgUEl)  dgUEl.textContent  = fmt(dgUsed, 3);
 
-  $('estimate-note').textContent =
-    `EB ₹${ebTariff}/kWh · DG ₹${dgTariff}/kWh · day ${dayOfMonth}/${daysInMonth}`;
-  $('estimate-note').classList.add('visible');
+  if (noteEl) {
+    noteEl.textContent = `EB ₹${ebTariff}/kWh · DG ₹${dgTariff}/kWh · day ${dayOfMonth}/${daysInMonth}`;
+    noteEl.classList.add('visible');
+  }
 
-  // ↑/↓ vs last billed month — shown under hero card
+  // ↑/↓ vs last billed month
   const vsEl = $('estimate-vs');
   if (vsEl) {
-    const lastMis       = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
-    const lastTotal     = Number(lastMis?.grandtotal || lastMis?.ebtotalamount || 0) +
-                          Number(lastMis?.dgtotalamount || 0);
+    const lastTotal = Number(mis?.grandtotal || mis?.ebtotalamount || 0) +
+                      Number(mis?.dgtotalamount || 0);
     const lastMonthName = months[0].split(', ')[0].slice(0, 3);
-    const delta         = projected - lastTotal;
-    const absDelta      = Math.abs(Math.round(delta));
+    const delta = projected - lastTotal;
+    const absDelta = Math.abs(Math.round(delta));
     if (lastTotal > 0) {
       if (delta > 50) {
         vsEl.textContent = `↑₹${absDelta} vs ${lastMonthName} projected`;
@@ -482,17 +490,13 @@ function renderEstimate(live) {
       vsEl.className   = 'estimate-vs';
     }
   }
-
-  // Also update prediction cards now that we have billing data
-  renderPredictions(live);
 }
 
-// ── Prediction Cards ─────────────────────────────────────
 function renderPredictions(live) {
   const pc = $('prediction-cards');
   if (!pc) return;
 
-  const months = getSortedMonths();
+  const months  = getSortedMonths();
   const balance = Number(live?.pmb ?? 0);
 
   if (months.length === 0) {
@@ -500,46 +504,30 @@ function renderPredictions(live) {
     return;
   }
 
-  // 3-month average daily rate (or fewer if we don't have 3)
+  // 3-month average daily rate
   const recent = months.slice(0, Math.min(3, months.length));
   const totalBill = recent.reduce((s, m) => {
-    const mis = monthlyCache[m]?.mis ?? monthlyCache[m];
-    return s + Number(mis?.grandtotal || mis?.ebtotalamount || 0) +
-               Number(mis?.dgtotalamount || 0);
+    const mis = getMis(m);
+    return s + Number(mis?.grandtotal || mis?.ebtotalamount || 0) + Number(mis?.dgtotalamount || 0);
   }, 0);
   const avgMonthlyBill = totalBill / recent.length;
-  const dailyRate = avgMonthlyBill / 30;
+  const dailyRate      = avgMonthlyBill / 30;
 
-  // Last billed month's total
-  const lastMis = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
+  // Last billed month
+  const lastMis       = getMis(months[0]);
   const lastMonthTotal = Number(lastMis?.grandtotal || lastMis?.ebtotalamount || 0) +
                          Number(lastMis?.dgtotalamount || 0);
-  const lastMonthName  = months[0].split(', ')[0].slice(0, 3); // e.g. "Oct"
+  const lastMonthName  = months[0].split(', ')[0].slice(0, 3);
 
-  // Projected this month (passed in from renderEstimate via live)
-  // Recalculate here so renderPredictions is self-contained
-  const ebStart  = lastMis?.ebpresentreading  ?? 0;
-  const dgStart  = lastMis?.dgbpresentreading ?? 0;
-  const ebTariff = lastMis?.ebtariff  || EB_TARIFF_FALLBACK;
-  const dgTariff = lastMis?.dgtariff  || DG_TARIFF_FALLBACK;
-  const ebUsed   = Math.max(0, (live?.ebwh ?? 0) - ebStart);
-  const dgUsed   = Math.max(0, (live?.dgwh ?? 0) - dgStart);
-  const actualSoFar = ebUsed * ebTariff + dgUsed * dgTariff;
-  const now = new Date();
-  const dayOfMonth  = now.getDate();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const projected   = dayOfMonth > 0 ? (actualSoFar / dayOfMonth) * daysInMonth : actualSoFar;
+  // Projected this month via shared calc
+  const { projected } = calcCurrentMonth(live, lastMis);
 
-  // Comparison: projected this month vs last month — now shown under hero card, not here
-  // Days until end of NEXT month
+  const now           = new Date();
   const endNextMonth  = new Date(now.getFullYear(), now.getMonth() + 2, 0);
   const daysToEndNext = Math.ceil((endNextMonth - now) / 86400000);
-
-  // Recharge needed
-  const neededRaw     = dailyRate * daysToEndNext - balance;
+  const neededRaw      = dailyRate * daysToEndNext - balance;
   const rechargeNeeded = neededRaw > 0 ? Math.ceil(neededRaw / 500) * 500 : 0;
 
-  // Days balance lasts
   const daysLeft   = dailyRate > 0 ? Math.floor(balance / dailyRate) : null;
   const runoutDate = daysLeft != null ? new Date(Date.now() + daysLeft * 86400000) : null;
 
@@ -555,7 +543,6 @@ function renderPredictions(live) {
       <div class="pred-sub">to cover till ${endNextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
     </div>`;
 
-  // Inline runway under Balance strip
   const runwayEl = $('live-runway');
   if (runwayEl && daysLeft != null) {
     const runoutShort = runoutDate
@@ -567,12 +554,12 @@ function renderPredictions(live) {
 
 function renderWaterGrid(mis) {
   const grid = $('water-grid');
+  if (!grid) return;
   if (!mis) {
     grid.innerHTML = '<div class="water-loading">No monthly data</div>';
     return;
   }
 
-  // Collect all 4 DI channels that have readings
   const channels = [];
   for (let i = 1; i <= 4; i++) {
     const curr = mis[`di${i}presentreading`];
@@ -587,80 +574,23 @@ function renderWaterGrid(mis) {
     return;
   }
 
-  // Always show all 4 DI channels
-  const cards = channels.map(c => `
+  grid.innerHTML = channels.map(c => `
     <div class="water-card">
       <div class="water-card-label">💧 D${c.i}</div>
       <div class="water-card-reading">${fmt(c.curr, 1)}</div>
       <div class="water-card-unit">cumulative reading</div>
       <div class="water-card-delta">${c.cons > 0 ? `+${fmt(c.cons, 1)} that month` : 'no change that month'}</div>
-    </div>`);
-
-  grid.innerHTML = cards.join('');
-}
-
-// ═══════════════════════════════════════════════════════
-//  BOOTSTRAP — Phase 0 (runs before everything else)
-//  Fetches the most-recent bill to extract meterid and owner name.
-//  Resolves bootstrapReady so Daily tab and CustomerDetail can proceed.
-// ═══════════════════════════════════════════════════════
-async function loadBootstrap() {
-  const now     = new Date();
-  // Try up to 3 recent months to find a bill with a deviceid
-  for (let i = 0; i < 3; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = `${MONTH_NAMES[d.getMonth()]}, ${d.getFullYear()}`;
-    try {
-      const json = await safeGet('GetFromMonthlyBill', {
-        date: key, command: 'select', custid: FLAT
-      });
-      if (json.bills?.length > 0 && json.bills[0].deviceid) {
-        // ── Got meterid ──────────────────────────────────
-        meterid = json.bills[0].deviceid;
-
-        // Seed the daily month selector
-        if (!selectedDailyMonth) {
-          selectedDailyMonth = dailyKeyNow();
-          renderDailyMonthSelector();
-        }
-
-        // Set owner name in header from bill (fast path)
-        const ownerName = json.bills[0].custname;
-        if (ownerName) {
-          const sub = $('header-subtitle');
-          if (sub && !sub.dataset.ownerSet) {
-            sub.textContent = `Galaxy Apartments · ${ownerName.replace(/^(Mr\.|Mrs\.|Ms\.|Dr\.)\s*/i, '')}`;
-            sub.dataset.ownerSet = '1';
-          }
-        }
-
-        // Also cache this bill so loadAllMonthly skips it
-        if (!monthlyCache[key]) monthlyCache[key] = json.bills[0];
-
-        _bootstrapResolve(meterid); // ← unblocks Daily + CustomerDetail
-        return;
-      }
-    } catch (e) {
-      console.warn(`bootstrap(${key}):`, e.message);
-    }
-  }
-  // No bill found — resolve anyway so app doesn't hang (Daily tab will show empty)
-  console.warn('bootstrap: no bill with deviceid found in last 3 months');
-  _bootstrapResolve(null);
+    </div>`).join('');
 }
 
 // ═══════════════════════════════════════════════════════
 //  MONTHLY TAB
+//  Phase 0: first bill with deviceid → meterid, meteridReady.resolve()
+//  Phase 1: 3 urgent months → render immediately
+//  Phase 2: remaining 9 months in background
 // ═══════════════════════════════════════════════════════
-function getSortedMonths() {
-  return Object.keys(monthlyCache).sort((a, b) => {
-    const p = s => { const [mn, yr] = s.split(', '); return new Date(`${mn} 1, ${yr}`); };
-    return p(b) - p(a);
-  });
-}
-
 async function loadAllMonthly() {
-  const now     = new Date();
+  const now = new Date();
   const allKeys = [];
   for (let i = 0; i < 12; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -676,30 +606,74 @@ async function loadAllMonthly() {
     return;
   }
 
-  showMonthlyState('loading');
+  showMonthlyLoading();
 
-  // Phase 1: 3 most recent months — render as soon as they arrive
-  const urgent   = toLoad.slice(0, 3);
-  const deferred = toLoad.slice(3);
+  // Phase 0: sequential scan of up to 3 recent months to find meterid
+  // This is folded into loadAllMonthly — no separate loadBootstrap needed.
+  // The first successful bill that has a deviceid resolves meteridReady.
+  if (!meterid) {
+    for (let i = 0; i < Math.min(3, toLoad.length); i++) {
+      const key = toLoad[i];
+      try {
+        const json = await safeGet('GetFromMonthlyBill', {
+          date: key, command: 'select', custid: FLAT
+        });
+        if (json.success === false) {
+          const e = new Error(json.msg || 'DB error');
+          e.isDbError = true;
+          throw e;
+        }
+        if (json.bills?.length > 0) {
+          monthlyCache[key] = json.bills[0];
+          // Extract meterid from first bill that has one
+          if (!meterid && json.bills[0].deviceid) {
+            meterid = json.bills[0].deviceid;
+            if (!selectedDailyMonth) {
+              selectedDailyMonth = dailyKeyNow();
+              renderDailyMonthSelector();
+            }
+            meteridReady.resolve(meterid);
+          }
+          // Extract owner name from bill (fast path)
+          if (json.bills[0].custname) setOwnerName(json.bills[0].custname);
+        }
+      } catch (e) {
+        console.warn(`loadAllMonthly Phase0(${key}):`, e.message);
+        if (e.isDbError) {
+          showMonthlyDbError();
+          // Resolve meteridReady as null so dependents don't hang
+          meteridReady.resolve(null);
+          return;
+        }
+      }
+      // If we found meterid, stop the sequential Phase 0 scan
+      if (meterid) break;
+    }
+    // If still no meterid after scanning, resolve as null so app doesn't hang
+    if (!meterid) {
+      console.warn('loadAllMonthly: no bill with deviceid found in first 3 months');
+      meteridReady.resolve(null);
+    }
+  }
 
-  const phase1 = await Promise.allSettled(urgent.map(k => loadOneMonth(k)));
+  // Phase 1: load remaining urgent months (the ones not yet in cache)
+  const urgent   = toLoad.filter(k => !monthlyCache[k]).slice(0, 3);
+  const deferred = toLoad.filter(k => !monthlyCache[k]).slice(3);
+
+  await Promise.allSettled(urgent.map(k => loadOneMonth(k)));
 
   const months = getSortedMonths();
   if (months.length === 0) {
-    // All failed — check if DB error or just no data
-    const dbDown = phase1.some(r => r.reason?.isDbError);
-    showMonthlyState(dbDown ? 'db-error' : 'empty');
+    showMonthlyEmpty();
     return;
   }
 
   // Render immediately with what we have
-  showMonthlyState('ready');
+  showMonthlyReady();
   renderMonthSelector();
   renderMonthlyDetail(selectedMonth);
-
-  const topMis = monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]];
-  renderWaterGrid(topMis);
-  if (liveData) renderEstimate(liveData);  // update hero with real base readings
+  renderWaterGrid(getMis(months[0]));
+  if (liveData) renderEstimate(liveData);
 
   // Phase 2: remaining 9 months in background, 3 at a time
   for (let i = 0; i < deferred.length; i += 3) {
@@ -722,7 +696,6 @@ async function loadOneMonth(monthKey) {
     if (json.bills?.length > 0) {
       monthlyCache[monthKey] = json.bills[0];
       renderMonthSelector(); // progressive chip update
-      // meterid + owner name are handled exclusively by loadBootstrap() — not here
     }
   } catch (e) {
     console.warn(`loadOneMonth(${monthKey}):`, e.message);
@@ -730,17 +703,27 @@ async function loadOneMonth(monthKey) {
   }
 }
 
-function showMonthlyState(state) {
+function showMonthlyLoading() {
   const loading = $('monthly-loading');
   const content = $('monthly-content');
-  if (state === 'ready') {
-    loading.style.display = 'none';
-    content.style.display = 'block';
-  } else if (state === 'loading') {
+  if (loading) {
     loading.style.display = 'flex';
     loading.innerHTML = '<div class="spinner"></div><span>Fetching monthly data…</span>';
-    content.style.display = 'none';
-  } else if (state === 'db-error') {
+  }
+  if (content) content.style.display = 'none';
+}
+
+function showMonthlyReady() {
+  const loading = $('monthly-loading');
+  const content = $('monthly-content');
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'block';
+}
+
+function showMonthlyDbError() {
+  const loading = $('monthly-loading');
+  const content = $('monthly-content');
+  if (loading) {
     loading.style.display = 'flex';
     loading.innerHTML = `
       <div style="text-align:center;padding:16px">
@@ -750,12 +733,18 @@ function showMonthlyState(state) {
         <button onclick="monthlyCache={};selectedMonth=null;loadAllMonthly()"
                 style="background:var(--accent-blue);color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:0.9rem;cursor:pointer">↻ Retry</button>
       </div>`;
-    content.style.display = 'none';
-  } else { // 'empty'
+  }
+  if (content) content.style.display = 'none';
+}
+
+function showMonthlyEmpty() {
+  const loading = $('monthly-loading');
+  const content = $('monthly-content');
+  if (loading) {
     loading.style.display = 'flex';
     loading.innerHTML = '<span style="color:var(--text-muted)">No billing data available</span>';
-    content.style.display = 'none';
   }
+  if (content) content.style.display = 'none';
 }
 
 function renderMonthSelector() {
@@ -764,6 +753,7 @@ function renderMonthSelector() {
   if (!selectedMonth || !months.includes(selectedMonth)) selectedMonth = months[0];
 
   const sel = $('month-selector');
+  if (!sel) return;
   sel.innerHTML = months.map(m => `
     <button class="month-chip ${m === selectedMonth ? 'active' : ''}"
             data-month="${escHtml(m)}" role="option"
@@ -785,11 +775,6 @@ function renderMonthSelector() {
   renderMonthlyDetail(selectedMonth);
 }
 
-function shortMonth(key) {
-  const [mn, yr] = key.split(', ');
-  return `${mn.slice(0, 3)} '${yr.slice(2)}`;
-}
-
 function renderMonthlyDetail(monthKey) {
   if (!monthKey) return;
   const bill    = monthlyCache[monthKey];
@@ -797,66 +782,76 @@ function renderMonthlyDetail(monthKey) {
   const content = $('monthly-content');
 
   if (!bill) {
-    loading.style.display = 'flex';
-    const span = loading.querySelector('span');
-    if (span) span.textContent = `No data for ${monthKey}`;
-    content.style.display = 'none';
+    if (loading) {
+      loading.style.display = 'flex';
+      const span = loading.querySelector('span');
+      if (span) span.textContent = `No data for ${monthKey}`;
+    }
+    if (content) content.style.display = 'none';
     return;
   }
 
-  loading.style.display = 'none';
-  content.style.display = 'block';
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'block';
 
   const mis = bill.mis ?? bill;
 
-  $('monthly-period').textContent = mis.reportingmonth || monthKey;
-  $('monthly-dates').textContent  = `${mis.firstreadingdate || ''} → ${mis.lastreadingdate || ''}`;
+  const pEl = $('monthly-period');
+  const dEl = $('monthly-dates');
+  if (pEl) pEl.textContent = mis.reportingmonth || monthKey;
+  if (dEl) dEl.textContent = `${mis.firstreadingdate || ''} → ${mis.lastreadingdate || ''}`;
 
-  // Main view: units + cost only
-  $('m-eb-units').textContent = fmt(mis.ebconsumption, 2);
-  $('m-eb-cost').textContent  = `₹${fmt(mis.ebtotalamount, 0)}`;
-  $('m-dg-units').textContent = fmt(mis.dgconsumption, 3);
-  $('m-dg-cost').textContent  = `₹${fmt(mis.dgtotalamount, 2)}`;
-
-  // Collapsible details: exact readings
-  $('m-eb-prev').textContent = fmt(mis.ebpreviousreading, 2);
-  $('m-eb-curr').textContent = fmt(mis.ebpresentreading, 2);
-  $('m-dg-prev').textContent = fmt(mis.dgpreviousreading, 3);
-  $('m-dg-curr').textContent = fmt(mis.dgbpresentreading, 3);
+  const ebUEl = $('m-eb-units'); if (ebUEl) ebUEl.textContent = fmt(mis.ebconsumption, 2);
+  const ebCEl = $('m-eb-cost');  if (ebCEl) ebCEl.textContent = `₹${fmt(mis.ebtotalamount, 0)}`;
+  const dgUEl = $('m-dg-units'); if (dgUEl) dgUEl.textContent = fmt(mis.dgconsumption, 3);
+  const dgCEl = $('m-dg-cost');  if (dgCEl) dgCEl.textContent = `₹${fmt(mis.dgtotalamount, 2)}`;
+  const ebPEl = $('m-eb-prev');  if (ebPEl) ebPEl.textContent = fmt(mis.ebpreviousreading, 2);
+  const ebCREl= $('m-eb-curr');  if (ebCREl) ebCREl.textContent = fmt(mis.ebpresentreading, 2);
+  const dgPEl = $('m-dg-prev');  if (dgPEl) dgPEl.textContent = fmt(mis.dgpreviousreading, 3);
+  const dgCREl= $('m-dg-curr');  if (dgCREl) dgCREl.textContent = fmt(mis.dgbpresentreading, 3);
 
   // Water DI meters
   const waterTable = $('monthly-water-table');
-  waterTable.querySelectorAll('.bill-row:not(.bill-header-row)').forEach(r => r.remove());
-  let totalWaterCost = 0;
-  let waterRows = '';
-  for (let i = 1; i <= 4; i++) {
-    const curr = mis[`di${i}presentreading`];
-    if (curr == null) continue;
-    const label = (mis[`di${i}text`] || `DI${i}`).toUpperCase();
-    const cons  = mis[`di${i}consumption`] ?? 0;
-    const cost  = mis[`di${i}totalamount`] ?? 0;
-    totalWaterCost += Number(cost);
-    waterRows += `
-      <div class="bill-row">
-        <span class="src-badge di-badge">${escHtml(label)}</span>
-        <span>${fmt(cons, 1)}</span>
-        <span>₹${fmt(cost, 0)}</span>
-      </div>`;
+  if (waterTable) {
+    waterTable.querySelectorAll('.bill-row:not(.bill-header-row)').forEach(r => r.remove());
+    let totalWaterCost = 0;
+    let waterRows = '';
+    for (let i = 1; i <= 4; i++) {
+      const curr = mis[`di${i}presentreading`];
+      if (curr == null) continue;
+      const label = (mis[`di${i}text`] || `DI${i}`).toUpperCase();
+      const cons  = mis[`di${i}consumption`] ?? 0;
+      const cost  = mis[`di${i}totalamount`] ?? 0;
+      totalWaterCost += Number(cost);
+      waterRows += `
+        <div class="bill-row">
+          <span class="src-badge di-badge">${escHtml(label)}</span>
+          <span>${fmt(cons, 1)}</span>
+          <span>₹${fmt(cost, 0)}</span>
+        </div>`;
+    }
+    const headerRow = waterTable.querySelector('.bill-header-row');
+    if (headerRow) headerRow.insertAdjacentHTML('afterend', waterRows);
   }
-  const headerRow = waterTable.querySelector('.bill-header-row');
-  if (headerRow) headerRow.insertAdjacentHTML('afterend', waterRows);
 
-  // Total
-  const total = (mis.ebtotalamount || 0) + (mis.dgtotalamount || 0) + totalWaterCost + (mis.fixedcost || 0);
-  $('monthly-total-amount').textContent = `₹ ${fmt(total, 0)}`;
+  const total = (mis.ebtotalamount || 0) + (mis.dgtotalamount || 0) + (mis.fixedcost || 0);
+  // Recompute totalWaterCost for grand total
+  let grandWaterCost = 0;
+  for (let i = 1; i <= 4; i++) {
+    const cost = mis[`di${i}totalamount`];
+    if (cost != null) grandWaterCost += Number(cost);
+  }
+  const grandTotal = (mis.ebtotalamount || 0) + (mis.dgtotalamount || 0) + grandWaterCost + (mis.fixedcost || 0);
+  const totEl = $('monthly-total-amount');
+  if (totEl) totEl.textContent = `₹ ${fmt(grandTotal, 0)}`;
 }
 
-// ── Trend Charts ─────────────────────────────────────────
+// ── Trend Charts ──────────────────────────────────────────
 function renderTrendChart() {
   const months = getSortedMonths().reverse();
   drawBarChart('trend-chart', months.map(shortMonth), [{
     label: 'EB kWh',
-    data:  months.map(m => (monthlyCache[m]?.mis ?? monthlyCache[m])?.ebconsumption ?? 0),
+    data:  months.map(m => getMis(m)?.ebconsumption ?? 0),
     color: '#facc15'
   }]);
 }
@@ -866,7 +861,7 @@ function renderWaterTrendChart() {
   drawBarChart('water-trend-chart', months.map(shortMonth), [{
     label: 'Water KL',
     data:  months.map(m => {
-      const mis = monthlyCache[m]?.mis ?? monthlyCache[m];
+      const mis = getMis(m);
       return (mis?.di3consumption ?? 0) + (mis?.di4consumption ?? 0);
     }),
     color: '#38bdf8'
@@ -877,7 +872,6 @@ function drawBarChart(canvasId, labels, datasets) {
   const canvas = $(canvasId);
   if (!canvas) return;
 
-  // If the monthly tab is hidden, clientWidth=0 — measure window width instead
   const parentW = canvas.parentElement.clientWidth;
   const W = (parentW > 20 ? parentW : window.innerWidth) - 24;
   const H = 170;
@@ -924,16 +918,27 @@ function drawBarChart(canvasId, labels, datasets) {
     ctx.fillText(Math.round((i / 4) * maxVal), PAD_L - 4, y + 3);
   }
 
-  // Bars
+  // Bars — color can be an array (per-bar) or a string (gradient)
   datasets.forEach(ds => {
     ds.data.forEach((val, i) => {
       const barH = (val / maxVal) * chartH;
       const x    = PAD_L + i * groupW + (groupW - barW) / 2;
       const y    = PAD_T + chartH - barH;
-      const grad = ctx.createLinearGradient(x, y, x, y + barH);
-      grad.addColorStop(0, ds.color);
-      grad.addColorStop(1, ds.color + '55');
-      ctx.fillStyle = grad;
+
+      let fillStyle;
+      if (Array.isArray(ds.color)) {
+        // Per-bar solid color
+        fillStyle = ds.color[i] ?? '#3b82f6';
+        ctx.fillStyle = fillStyle;
+      } else {
+        // Gradient using the string color
+        const grad = ctx.createLinearGradient(x, y, x, y + barH);
+        grad.addColorStop(0, ds.color);
+        grad.addColorStop(1, ds.color + '55');
+        fillStyle  = ds.color;
+        ctx.fillStyle = grad;
+      }
+
       ctx.beginPath();
       ctx.moveTo(x + radius, y);
       ctx.lineTo(x + barW - radius, y);
@@ -944,8 +949,9 @@ function drawBarChart(canvasId, labels, datasets) {
       ctx.quadraticCurveTo(x, y, x + radius, y);
       ctx.closePath();
       ctx.fill();
+
       if (barH > 20) {
-        ctx.fillStyle = ds.color;
+        ctx.fillStyle = Array.isArray(ds.color) ? (ds.color[i] ?? '#3b82f6') : ds.color;
         ctx.font = 'bold 9px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(Math.round(val), x + barW / 2, y - 3);
@@ -963,36 +969,8 @@ function drawBarChart(canvasId, labels, datasets) {
 }
 
 // ═══════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════
 //  DAILY TAB
 // ═══════════════════════════════════════════════════════
-
-// Convert "Nov-2026" ↔ display "November 2026"
-const MON_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const MON_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-function dailyKeyNow() {
-  const d = new Date();
-  return `${MON_SHORT[d.getMonth()]}-${d.getFullYear()}`;
-}
-
-function dailyKeyToDisplay(key) {
-  const [mon, yr] = key.split('-');
-  const idx = MON_SHORT.indexOf(mon);
-  return idx >= 0 ? `${MON_FULL[idx]} ${yr}` : key;
-}
-
-// Last N months as "Mon-YYYY" keys, newest first
-function getDailyMonthKeys(n = 12) {
-  const keys = [];
-  const now = new Date();
-  for (let i = 0; i < n; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    keys.push(`${MON_SHORT[d.getMonth()]}-${d.getFullYear()}`);
-  }
-  return keys;
-}
-
 function renderDailyMonthSelector() {
   const sel = $('daily-month-selector');
   if (!sel) return;
@@ -1022,12 +1000,14 @@ function renderDailyMonthSelector() {
 }
 
 async function loadDailyMonth(monthKey) {
-  await bootstrapReady; // wait for meterid (resolved by loadBootstrap)
+  await meteridReady.promise; // wait for meterid (resolved by loadAllMonthly Phase 0)
   if (!meterid) {
-    $('daily-table').innerHTML = '<div class="daily-loading">Meter ID unavailable — no billing data found.</div>';
+    const tbl = $('daily-table');
+    if (tbl) tbl.innerHTML = '<div class="daily-loading">Meter ID unavailable — no billing data found.</div>';
     return;
   }
-  $('daily-table').innerHTML = '<div class="daily-loading"><div class="spinner"></div><span>Loading…</span></div>';
+  const tbl = $('daily-table');
+  if (tbl) tbl.innerHTML = '<div class="daily-loading"><div class="spinner"></div><span>Loading…</span></div>';
 
   try {
     const json = await safeGet('GetDailyMonthlyTrend', {
@@ -1035,13 +1015,13 @@ async function loadDailyMonth(monthKey) {
     });
     const trend = json.dailymonthlytrend;
     if (!trend?.length) {
-      $('daily-table').innerHTML = '<div class="daily-loading">No data for this month</div>';
+      if (tbl) tbl.innerHTML = '<div class="daily-loading">No data for this month</div>';
       return;
     }
     dailyCache[monthKey] = trend;
     renderDailyDetail(monthKey);
   } catch (e) {
-    $('daily-table').innerHTML = `<div class="daily-loading">Error: ${e.message}</div>`;
+    if (tbl) tbl.innerHTML = `<div class="daily-loading">Error: ${e.message}</div>`;
   }
 }
 
@@ -1049,61 +1029,55 @@ function renderDailyDetail(monthKey) {
   const trend = dailyCache[monthKey];
   if (!trend) return;
 
-  const now = new Date();
+  const now      = new Date();
   const isCurrent = monthKey === dailyKeyNow();
-  const todayDay  = isCurrent ? String(now.getDate()).padStart(2,'0') : null;
+  const todayDay  = isCurrent ? String(now.getDate()).padStart(2, '0') : null;
 
-  // Summary stats
-  const values   = trend.map(r => Number(r.value) || 0);
-  const total    = values.reduce((s, v) => s + v, 0);
-  const nonZero  = values.filter(v => v > 0);
-  const avg      = nonZero.length ? total / nonZero.length : 0;
+  const values  = trend.map(r => Number(r.value) || 0);
+  const total   = values.reduce((s, v) => s + v, 0);
+  const nonZero = values.filter(v => v > 0);
+  const avg     = nonZero.length ? total / nonZero.length : 0;
 
-  // Cost estimate using latest tariff
-  const months   = getSortedMonths();
-  const mis      = months.length ? (monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]]) : null;
-  const tariff   = Number(mis?.ebtariff) || EB_TARIFF_FALLBACK;
-  const estCost  = total * tariff;
+  const months  = getSortedMonths();
+  const mis     = months.length ? getMis(months[0]) : null;
+  const tariff  = Number(mis?.ebtariff) || EB_TARIFF_FALLBACK;
+  const estCost = total * tariff;
 
-  $('daily-total').textContent = fmt(total, 2);
-  $('daily-avg').textContent   = fmt(avg, 2);
-  $('daily-cost').textContent  = fmtInt(estCost);
+  const totEl  = $('daily-total'); if (totEl)  totEl.textContent  = fmt(total, 2);
+  const avgEl  = $('daily-avg');   if (avgEl)  avgEl.textContent   = fmt(avg, 2);
+  const costEl = $('daily-cost');  if (costEl) costEl.textContent  = fmtInt(estCost);
 
-  // Bar chart
+  // Bar chart — today highlighted in amber
   const labels = trend.map(r => r.label);
   const colors = trend.map(r => r.label === todayDay ? '#f59e0b' : '#3b82f6');
-  drawBarChart('daily-chart', labels, [{
-    label: 'kWh', data: values, color: colors
-  }]);
+  drawBarChart('daily-chart', labels, [{ label: 'kWh', data: values, color: colors }]);
 
   // Day table
+  const monthLabel = dailyKeyToDisplay(monthKey).split(' ')[0];
   const rows = [...trend].reverse().map(r => {
     const isToday = r.label === todayDay;
     const cost    = (Number(r.value) || 0) * tariff;
     return `<div class="daily-row${isToday ? ' daily-today' : ''}">
-      <span class="daily-day">${isToday ? '▶' : ''} ${dailyKeyToDisplay(monthKey).split(' ')[0]} ${r.label}</span>
+      <span class="daily-day">${isToday ? '▶' : ''} ${monthLabel} ${r.label}</span>
       <span class="daily-kwh">${fmt(r.value, 2)} kWh</span>
       <span class="daily-cost-cell">₹${fmtInt(cost)}</span>
     </div>`;
   }).join('');
 
-  $('daily-table').innerHTML = rows || '<div class="daily-loading">No data</div>';
+  const tbl = $('daily-table');
+  if (tbl) tbl.innerHTML = rows || '<div class="daily-loading">No data</div>';
 }
 
-// ── Customer Detail (owner name via GetCustomerDetail) ─
+// ═══════════════════════════════════════════════════════
+//  CUSTOMER DETAIL — best-effort owner name refinement
+// ═══════════════════════════════════════════════════════
 async function loadCustomerDetail() {
-  await bootstrapReady; // wait for meterid (resolved by loadBootstrap)
+  await meteridReady.promise;
   if (!meterid) return;
   try {
     const json = await safeGet('GetCustomerDetail', { meterid });
     const det  = json.customerdetails?.[0];
-    if (!det?.custname) return;
-    const sub = $('header-subtitle');
-    if (sub) {
-      const short = det.custname.replace(/^(Mr\.|Mrs\.|Ms\.|Dr\.)\s*/i, '');
-      sub.textContent    = `Galaxy Apartments · ${short}`;
-      sub.dataset.ownerSet = '1';
-    }
+    if (det?.custname) setOwnerName(det.custname);
   } catch (_) {}
 }
 
@@ -1111,8 +1085,8 @@ async function loadCustomerDetail() {
 //  RECHARGE TAB
 // ═══════════════════════════════════════════════════════
 async function loadRecharge() {
-  $('recharge-list').innerHTML =
-    '<div class="recharge-loading"><div class="spinner"></div><span>Fetching recharge history…</span></div>';
+  const list = $('recharge-list');
+  if (list) list.innerHTML = '<div class="recharge-loading"><div class="spinner"></div><span>Fetching recharge history…</span></div>';
 
   const today    = new Date();
   const fromDate = new Date(today);
@@ -1130,8 +1104,7 @@ async function loadRecharge() {
     rechargeData = histories[0];
     renderRecharge(rechargeData);
   } catch (e) {
-    $('recharge-list').innerHTML =
-      '<div class="recharge-loading" style="color:var(--accent-red)">⚠️ Could not load recharge history</div>';
+    if (list) list.innerHTML = '<div class="recharge-loading" style="color:var(--accent-red)">⚠️ Could not load recharge history</div>';
     console.error('loadRecharge:', e);
   }
 }
@@ -1146,8 +1119,8 @@ function monthsSpanned(rclist) {
   if (!rclist.length) return 1;
   const dates = rclist.map(r => parseDDMMYYYY(r.receiptdate)).filter(Boolean);
   if (!dates.length) return 1;
-  const min  = new Date(Math.min(...dates));
-  const to   = new Date(); // always measure to today
+  const min = new Date(Math.min(...dates));
+  const to  = new Date();
   return Math.max(1,
     (to.getFullYear() - min.getFullYear()) * 12 + (to.getMonth() - min.getMonth()) + 1
   );
@@ -1157,12 +1130,13 @@ function renderRecharge(data) {
   const rclist = data.rclist ?? [];
   const total  = data.total ?? rclist.reduce((s, r) => s + (r.rcamount ?? 0), 0);
 
-  $('rs-total').textContent = `₹${fmtInt(total)}`;
-  $('rs-count').textContent = rclist.length;
-  $('rs-avg').textContent   = rclist.length ? `₹${fmtInt(total / monthsSpanned(rclist))}` : '—';
+  const totEl = $('rs-total'); if (totEl) totEl.textContent = `₹${fmtInt(total)}`;
+  const cntEl = $('rs-count'); if (cntEl) cntEl.textContent = rclist.length;
+  const avgEl = $('rs-avg');   if (avgEl) avgEl.textContent = rclist.length ? `₹${fmtInt(total / monthsSpanned(rclist))}` : '—';
 
   const sorted = [...rclist].sort((a, b) => parseDDMMYYYY(b.receiptdate) - parseDDMMYYYY(a.receiptdate));
-  $('recharge-list').innerHTML = sorted.map(r => `
+  const list = $('recharge-list');
+  if (list) list.innerHTML = sorted.map(r => `
     <div class="recharge-item">
       <div class="recharge-icon">₹</div>
       <div class="recharge-info">
@@ -1201,13 +1175,22 @@ function scheduleAutoRefresh() {
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
-async function init() {
+function init() {
   if (!ACCESS_SECRET) {
     showLockScreen('Open the app via your private bookmarked URL (with #secret).<br><br>Once opened with the secret, the installed app will remember it.');
     return;
   }
 
-  // Sync badge to actual stored flat (HTML default may say B401)
+  // Snapshot tab HTML for clean resets on flat change
+  _snapshots = {
+    'tab-live':     $('tab-live')?.innerHTML     ?? '',
+    'tab-monthly':  $('tab-monthly')?.innerHTML  ?? '',
+    'tab-daily':    $('tab-daily')?.innerHTML    ?? '',
+    'tab-recharge': $('tab-recharge')?.innerHTML ?? '',
+    'header-subtitle': $('header-subtitle')?.textContent ?? 'Galaxy Apartments',
+  };
+
+  // Sync badge to actual stored flat
   const badge = $('flat-badge');
   if (badge) badge.textContent = FLAT;
   document.title = `${FLAT} — Meter`;
@@ -1215,27 +1198,19 @@ async function init() {
   initTabs();
   initFlatBadge();
 
-  $refresh.addEventListener('click', () => {
-    clearTimeout(refreshTimer);
-    loadLive();
-    scheduleAutoRefresh();
-  });
+  const refreshBtn = $('refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      clearTimeout(refreshTimer);
+      loadLive();
+      scheduleAutoRefresh();
+    });
+  }
 
-  // ── Phased loading ─────────────────────────────────────
-  // Phase 0 (sequential): bootstrap — fetch one bill to extract meterid + owner name.
-  // Phase 1 (parallel):   everything else fires as soon as bootstrap resolves.
-  loadBootstrap().then(() => {
-    loadCustomerDetail(); // refines owner name via dedicated API (best effort)
-    if (meterid && selectedDailyMonth) loadDailyMonth(selectedDailyMonth);
-  });
-  loadLive();       // independent — no deps
-  loadAllMonthly(); // independent — skips bootstrap's cached month automatically
-  loadRecharge();   // independent — no deps
-
-  scheduleAutoRefresh();
+  startAll();
 }
 
-// ── Service Worker ────────────────────────────────────
+// ── Service Worker ──────────────────────────────────────
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(err =>
     console.warn('SW registration failed:', err)
