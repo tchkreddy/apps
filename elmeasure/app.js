@@ -91,7 +91,8 @@ function showToast(msg, duration = 2500) {
 //  SAFE API CALL
 // ═══════════════════════════════════════════════════════
 async function safeGet(taskid, params) {
-  const ALLOWED = ['GetOnlineData', 'GetFromMonthlyBill', 'RCHistoryReport'];
+  const ALLOWED = ['GetOnlineData', 'GetFromMonthlyBill', 'RCHistoryReport',
+                   'GetDailyMonthlyTrend', 'GetCustomerDetail'];
   if (!ALLOWED.includes(taskid)) throw new Error(`BLOCKED: ${taskid}`);
   if (!ACCESS_SECRET) {
     const e = new Error('No secret'); e.isUnauthorized = true; throw e;
