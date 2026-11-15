@@ -819,7 +819,7 @@ function renderMonthlyDetail(monthKey) {
     for (let i = 1; i <= 4; i++) {
       const curr = mis[`di${i}presentreading`];
       if (curr == null) continue;
-      const label = (mis[`di${i}text`] || `DI${i}`).toUpperCase();
+      const label = `D${i}`;
       const cons  = mis[`di${i}consumption`] ?? 0;
       const cost  = mis[`di${i}totalamount`] ?? 0;
       totalWaterCost += Number(cost);
