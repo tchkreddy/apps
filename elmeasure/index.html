@@ -44,6 +44,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Monthly
       </button>
+      <button class="tab" data-tab="daily" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Daily
+      </button>
       <button class="tab" data-tab="recharge" role="tab" aria-selected="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         Recharge
@@ -217,6 +221,43 @@
         <div class="chart-container" id="water-chart-container">
           <canvas id="water-trend-chart"></canvas>
         </div>
+      </section>
+
+      <!-- ===== DAILY TAB ===== -->
+      <section id="tab-daily" class="tab-panel">
+
+        <!-- Month selector -->
+        <div class="month-scroll" id="daily-month-selector" role="listbox" aria-label="Select month for daily view"></div>
+
+        <!-- Summary strip -->
+        <div class="daily-summary" id="daily-summary">
+          <div class="daily-sum-item">
+            <div class="daily-sum-label">Total</div>
+            <div class="daily-sum-value" id="daily-total">—</div>
+            <div class="daily-sum-unit">kWh</div>
+          </div>
+          <div class="daily-sum-item">
+            <div class="daily-sum-label">Avg / Day</div>
+            <div class="daily-sum-value" id="daily-avg">—</div>
+            <div class="daily-sum-unit">kWh</div>
+          </div>
+          <div class="daily-sum-item">
+            <div class="daily-sum-label">Est. Cost</div>
+            <div class="daily-sum-value" id="daily-cost">—</div>
+            <div class="daily-sum-unit">₹</div>
+          </div>
+        </div>
+
+        <!-- Bar chart -->
+        <div class="chart-container" id="daily-chart-container">
+          <canvas id="daily-chart"></canvas>
+        </div>
+
+        <!-- Day table -->
+        <div class="daily-table" id="daily-table">
+          <div class="daily-loading"><div class="spinner"></div><span>Loading…</span></div>
+        </div>
+
       </section>
 
       <!-- ===== RECHARGE TAB ===== -->

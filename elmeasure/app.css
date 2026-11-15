@@ -730,3 +730,86 @@ canvas { display: block; width: 100% !important; }
 
 /* ── Utility ─────────────────────────────────────── */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+/* ── Daily Tab ───────────────────────────────────── */
+.daily-summary {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 10px;
+}
+.daily-sum-item {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 8px 8px;
+  text-align: center;
+}
+.daily-sum-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.daily-sum-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+.daily-sum-unit {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.daily-table {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.daily-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.daily-row {
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  gap: 8px;
+}
+.daily-row.daily-today {
+  border-color: #f59e0b;
+  background: rgba(245,158,11,0.08);
+}
+.daily-day {
+  flex: 1;
+  color: var(--text-secondary);
+}
+.daily-today .daily-day {
+  color: #f59e0b;
+  font-weight: 600;
+}
+.daily-kwh {
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 80px;
+  text-align: right;
+}
+.daily-cost-cell {
+  color: var(--text-muted);
+  min-width: 55px;
+  text-align: right;
+  font-size: 12px;
+}

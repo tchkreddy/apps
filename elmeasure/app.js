@@ -47,6 +47,9 @@ let liveData     = null;   // GetOnlineData response object
 let monthlyCache = {};     // { "Month, YYYY": billObj }
 let rechargeData = null;   // RCHistoryReport response object
 let selectedMonth = null;  // currently displayed month key
+let meterid       = null;  // numeric device ID (from first loaded bill)
+let dailyCache    = {};    // { "Nov-2026": [{label,value},...] }
+let selectedDailyMonth = null; // currently displayed daily month key
 let refreshTimer  = null;  // setInterval handle
 
 // ═══════════════════════════════════════════════════════
@@ -115,6 +118,9 @@ function resetAll() {
   monthlyCache  = {};
   rechargeData  = null;
   selectedMonth = null;
+  meterid       = null;
+  dailyCache    = {};
+  selectedDailyMonth = null;
   clearTimeout(refreshTimer);
 
   // ── Header ────────────────────────────────────────────
@@ -183,6 +189,15 @@ function resetAll() {
     ctx.fillStyle = '#1e293b';
     ctx.fillRect(0, 0, c.width, c.height);
   });
+
+  // ── Daily tab ─────────────────────────────────────────
+  $('daily-month-selector').innerHTML = '';
+  $('daily-total').textContent = '—';
+  $('daily-avg').textContent   = '—';
+  $('daily-cost').textContent  = '—';
+  $('daily-table').innerHTML   = '<div class="daily-loading"><div class="spinner"></div><span>Loading…</span></div>';
+  const dc = $('daily-chart');
+  if (dc) { const ctx = dc.getContext('2d'); ctx.clearRect(0,0,dc.width,dc.height); ctx.fillStyle='#1e293b'; ctx.fillRect(0,0,dc.width,dc.height); }
 
   // ── Recharge tab ─────────────────────────────────────
   $('rs-total').textContent = '—';
@@ -299,6 +314,26 @@ function initTabs() {
         // Redraw charts now that tab is visible (they may have drawn at width=0)
         renderTrendChart();
         renderWaterTrendChart();
+      }
+      if (target === 'daily') {
+        renderDailyMonthSelector();
+        if (meterid && selectedDailyMonth && !dailyCache[selectedDailyMonth]) {
+          loadDailyMonth(selectedDailyMonth);
+        } else if (meterid && selectedDailyMonth && dailyCache[selectedDailyMonth]) {
+          renderDailyDetail(selectedDailyMonth);
+          // Redraw chart (may have drawn at width=0 when tab was hidden)
+          const trend = dailyCache[selectedDailyMonth];
+          if (trend) {
+            const now = new Date();
+            const isCurrent = selectedDailyMonth === dailyKeyNow();
+            const todayDay  = isCurrent ? String(now.getDate()).padStart(2,'0') : null;
+            drawBarChart('daily-chart', trend.map(r => r.label), [{
+              label: 'kWh',
+              data:  trend.map(r => Number(r.value) || 0),
+              color: trend.map(r => r.label === todayDay ? '#f59e0b' : '#3b82f6')
+            }]);
+          }
+        }
       }
       if (target === 'recharge' && !rechargeData) loadRecharge();
     });
@@ -624,6 +659,18 @@ async function loadOneMonth(monthKey) {
     if (json.bills?.length > 0) {
       monthlyCache[monthKey] = json.bills[0];
       renderMonthSelector(); // progressive chip update
+      // Capture meterid from first bill (used for daily trend + customer detail)
+      if (!meterid && json.bills[0]?.deviceid) {
+        meterid = json.bills[0].deviceid;
+        loadCustomerDetail();  // fetch owner name now we have meterid
+        // Also seed daily tab with current month
+        if (!selectedDailyMonth) {
+          const now = new Date();
+          selectedDailyMonth = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getMonth()]}-${now.getFullYear()}`;
+          renderDailyMonthSelector();
+          loadDailyMonth(selectedDailyMonth);
+        }
+      }
       // Update subtitle with owner name (once, from first bill that has it)
       const ownerName = json.bills[0]?.custname;
       if (ownerName) {
@@ -872,6 +919,146 @@ function drawBarChart(canvasId, labels, datasets) {
   labels.forEach((lbl, i) => {
     ctx.fillText(lbl, PAD_L + i * groupW + groupW / 2, H - PAD_B + 14);
   });
+}
+
+// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  DAILY TAB
+// ═══════════════════════════════════════════════════════
+
+// Convert "Nov-2026" ↔ display "November 2026"
+const MON_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MON_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function dailyKeyNow() {
+  const d = new Date();
+  return `${MON_SHORT[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+function dailyKeyToDisplay(key) {
+  const [mon, yr] = key.split('-');
+  const idx = MON_SHORT.indexOf(mon);
+  return idx >= 0 ? `${MON_FULL[idx]} ${yr}` : key;
+}
+
+// Last N months as "Mon-YYYY" keys, newest first
+function getDailyMonthKeys(n = 12) {
+  const keys = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    keys.push(`${MON_SHORT[d.getMonth()]}-${d.getFullYear()}`);
+  }
+  return keys;
+}
+
+function renderDailyMonthSelector() {
+  const sel = $('daily-month-selector');
+  if (!sel) return;
+  const keys = getDailyMonthKeys(12);
+  if (!selectedDailyMonth || !keys.includes(selectedDailyMonth)) selectedDailyMonth = keys[0];
+
+  sel.innerHTML = keys.map(k => `
+    <button class="month-chip ${k === selectedDailyMonth ? 'active' : ''}"
+            data-month="${k}" role="option"
+            aria-selected="${k === selectedDailyMonth}">${k}</button>
+  `).join('');
+
+  sel.querySelectorAll('.month-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      selectedDailyMonth = chip.dataset.month;
+      sel.querySelectorAll('.month-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.month === selectedDailyMonth);
+        c.setAttribute('aria-selected', c.dataset.month === selectedDailyMonth);
+      });
+      if (dailyCache[selectedDailyMonth]) {
+        renderDailyDetail(selectedDailyMonth);
+      } else {
+        loadDailyMonth(selectedDailyMonth);
+      }
+    });
+  });
+}
+
+async function loadDailyMonth(monthKey) {
+  if (!meterid) return; // need meterid from billing data first
+  $('daily-table').innerHTML = '<div class="daily-loading"><div class="spinner"></div><span>Loading…</span></div>';
+
+  try {
+    const json = await safeGet('GetDailyMonthlyTrend', {
+      meterid, monthyear: monthKey, paramId: 'kWh'
+    });
+    const trend = json.dailymonthlytrend;
+    if (!trend?.length) {
+      $('daily-table').innerHTML = '<div class="daily-loading">No data for this month</div>';
+      return;
+    }
+    dailyCache[monthKey] = trend;
+    renderDailyDetail(monthKey);
+  } catch (e) {
+    $('daily-table').innerHTML = `<div class="daily-loading">Error: ${e.message}</div>`;
+  }
+}
+
+function renderDailyDetail(monthKey) {
+  const trend = dailyCache[monthKey];
+  if (!trend) return;
+
+  const now = new Date();
+  const isCurrent = monthKey === dailyKeyNow();
+  const todayDay  = isCurrent ? String(now.getDate()).padStart(2,'0') : null;
+
+  // Summary stats
+  const values   = trend.map(r => Number(r.value) || 0);
+  const total    = values.reduce((s, v) => s + v, 0);
+  const nonZero  = values.filter(v => v > 0);
+  const avg      = nonZero.length ? total / nonZero.length : 0;
+
+  // Cost estimate using latest tariff
+  const months   = getSortedMonths();
+  const mis      = months.length ? (monthlyCache[months[0]]?.mis ?? monthlyCache[months[0]]) : null;
+  const tariff   = Number(mis?.ebtariff) || EB_TARIFF_FALLBACK;
+  const estCost  = total * tariff;
+
+  $('daily-total').textContent = fmt(total, 2);
+  $('daily-avg').textContent   = fmt(avg, 2);
+  $('daily-cost').textContent  = fmtInt(estCost);
+
+  // Bar chart
+  const labels = trend.map(r => r.label);
+  const colors = trend.map(r => r.label === todayDay ? '#f59e0b' : '#3b82f6');
+  drawBarChart('daily-chart', labels, [{
+    label: 'kWh', data: values, color: colors
+  }]);
+
+  // Day table
+  const rows = [...trend].reverse().map(r => {
+    const isToday = r.label === todayDay;
+    const cost    = (Number(r.value) || 0) * tariff;
+    return `<div class="daily-row${isToday ? ' daily-today' : ''}">
+      <span class="daily-day">${isToday ? '▶' : ''} ${dailyKeyToDisplay(monthKey).split(' ')[0]} ${r.label}</span>
+      <span class="daily-kwh">${fmt(r.value, 2)} kWh</span>
+      <span class="daily-cost-cell">₹${fmtInt(cost)}</span>
+    </div>`;
+  }).join('');
+
+  $('daily-table').innerHTML = rows || '<div class="daily-loading">No data</div>';
+}
+
+// ── Customer Detail (owner name via GetCustomerDetail) ─
+async function loadCustomerDetail() {
+  if (!meterid) return;
+  try {
+    const json = await safeGet('GetCustomerDetail', { meterid });
+    const det  = json.customerdetails?.[0];
+    if (!det?.custname) return;
+    const sub = $('header-subtitle');
+    if (sub) {
+      const short = det.custname.replace(/^(Mr\.|Mrs\.|Ms\.|Dr\.)\s*/i, '');
+      sub.textContent    = `Galaxy Apartments · ${short}`;
+      sub.dataset.ownerSet = '1';
+    }
+  } catch (_) {}
 }
 
 // ═══════════════════════════════════════════════════════
