@@ -797,6 +797,11 @@ canvas { display: block; width: 100% !important; }
   flex: 1;
   color: var(--text-secondary);
 }
+.daily-dow {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
 .daily-today .daily-day {
   color: #f59e0b;
   font-weight: 600;

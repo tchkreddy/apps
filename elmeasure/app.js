@@ -1054,11 +1054,15 @@ function renderDailyDetail(monthKey) {
 
   // Day table
   const monthLabel = dailyKeyToDisplay(monthKey).split(' ')[0];
+  const [mon, yr]  = monthKey.split('-');
+  const monIdx     = MON_SHORT.indexOf(mon);
+  const DAYS       = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const rows = [...trend].reverse().map(r => {
     const isToday = r.label === todayDay;
     const cost    = (Number(r.value) || 0) * tariff;
+    const dayName = monIdx >= 0 ? DAYS[new Date(Number(yr), monIdx, Number(r.label)).getDay()] : '';
     return `<div class="daily-row${isToday ? ' daily-today' : ''}">
-      <span class="daily-day">${isToday ? '▶' : ''} ${monthLabel} ${r.label}</span>
+      <span class="daily-day">${isToday ? '▶' : ''} ${monthLabel} ${r.label} <span class="daily-dow">${dayName}</span></span>
       <span class="daily-kwh">${fmt(r.value, 2)} kWh</span>
       <span class="daily-cost-cell">₹${fmtInt(cost)}</span>
     </div>`;
