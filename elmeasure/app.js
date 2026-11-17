@@ -471,18 +471,17 @@ function renderEstimate(live) {
   if (vsEl) {
     const lastTotal = Number(mis?.grandtotal || mis?.ebtotalamount || 0) +
                       Number(mis?.dgtotalamount || 0);
-    const lastMonthName = months[0].split(', ')[0].slice(0, 3);
     const delta = projected - lastTotal;
     const absDelta = Math.abs(Math.round(delta));
     if (lastTotal > 0) {
       if (delta > 50) {
-        vsEl.textContent = `↑₹${absDelta} vs ${lastMonthName} projected`;
+        vsEl.textContent = `↑ ₹${absDelta} up from last month`;
         vsEl.className   = 'estimate-vs est-vs-up';
       } else if (delta < -50) {
-        vsEl.textContent = `↓₹${absDelta} vs ${lastMonthName} projected`;
+        vsEl.textContent = `↓ ₹${absDelta} down from last month`;
         vsEl.className   = 'estimate-vs est-vs-down';
       } else {
-        vsEl.textContent = `≈ same as ${lastMonthName} projected`;
+        vsEl.textContent = `≈ Same as last month`;
         vsEl.className   = 'estimate-vs est-vs-same';
       }
     } else {
@@ -497,7 +496,8 @@ function renderPredictions(live) {
   if (!pc) return;
 
   const months  = getSortedMonths();
-  const balance = Number(live?.pmb ?? 0);
+  const hasLive = live && live.pmb != null;
+  const balance = hasLive ? Number(live.pmb) : 0;
 
   if (months.length === 0) {
     pc.innerHTML = '<div class="pred-loading">Need billing data for predictions…</div>';
@@ -519,29 +519,33 @@ function renderPredictions(live) {
                          Number(lastMis?.dgtotalamount || 0);
   const lastMonthName  = months[0].split(', ')[0].slice(0, 3);
 
-  // Projected this month via shared calc
-  const { projected } = calcCurrentMonth(live, lastMis);
-
   const now           = new Date();
   const endNextMonth  = new Date(now.getFullYear(), now.getMonth() + 2, 0);
   const daysToEndNext = Math.ceil((endNextMonth - now) / 86400000);
   const neededRaw      = dailyRate * daysToEndNext - balance;
   const rechargeNeeded = neededRaw > 0 ? Math.ceil(neededRaw / 500) * 500 : 0;
 
-  const daysLeft   = dailyRate > 0 ? Math.floor(balance / dailyRate) : null;
+  const daysLeft   = (hasLive && dailyRate > 0) ? Math.floor(balance / dailyRate) : null;
   const runoutDate = daysLeft != null ? new Date(Date.now() + daysLeft * 86400000) : null;
+
+  const rechargeCardHtml = hasLive ? `
+    <div class="pred-card ${rechargeNeeded === 0 ? 'pred-ok' : 'pred-warn'}">
+      <div class="pred-label">Recharge</div>
+      <div class="pred-value">${rechargeNeeded === 0 ? 'Not needed ✅' : '₹' + fmtInt(rechargeNeeded)}</div>
+      <div class="pred-sub">to cover till ${endNextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
+    </div>` : `
+    <div class="pred-card">
+      <div class="pred-label">Recharge</div>
+      <div class="pred-value">—</div>
+      <div class="pred-sub">Waiting for live balance…</div>
+    </div>`;
 
   pc.innerHTML = `
     <div class="pred-card">
       <div class="pred-label">Spending</div>
       <div class="pred-value">₹${fmtInt(avgMonthlyBill)}<span class="pred-value-unit">/mo avg</span></div>
       <div class="pred-sub">Last ${lastMonthName} ₹${fmtInt(lastMonthTotal)}</div>
-    </div>
-    <div class="pred-card ${rechargeNeeded === 0 ? 'pred-ok' : 'pred-warn'}">
-      <div class="pred-label">Recharge</div>
-      <div class="pred-value">${rechargeNeeded === 0 ? 'Not needed ✅' : '₹' + fmtInt(rechargeNeeded)}</div>
-      <div class="pred-sub">to cover till ${endNextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
-    </div>`;
+    </div>${rechargeCardHtml}`;
 
   const runwayEl = $('live-runway');
   if (runwayEl && daysLeft != null) {
@@ -603,6 +607,8 @@ async function loadAllMonthly() {
     renderMonthSelector();
     renderTrendChart();
     renderWaterTrendChart();
+    renderPredictions(liveData);
+    if (liveData) renderEstimate(liveData);
     return;
   }
 
@@ -673,6 +679,7 @@ async function loadAllMonthly() {
   renderMonthSelector();
   renderMonthlyDetail(selectedMonth);
   renderWaterGrid(getMis(months[0]));
+  renderPredictions(liveData);
   if (liveData) renderEstimate(liveData);
 
   // Phase 2: remaining 9 months in background, 3 at a time
@@ -680,6 +687,7 @@ async function loadAllMonthly() {
     await Promise.allSettled(deferred.slice(i, i + 3).map(k => loadOneMonth(k)));
     renderTrendChart();
     renderWaterTrendChart();
+    renderPredictions(liveData);
   }
 }
 
@@ -869,7 +877,7 @@ function renderWaterTrendChart() {
   }]);
 }
 
-function drawBarChart(canvasId, labels, datasets) {
+function drawBarChart(canvasId, labels, datasets, avgLine = null) {
   const canvas = $(canvasId);
   if (!canvas) return;
 
@@ -960,6 +968,25 @@ function drawBarChart(canvasId, labels, datasets) {
     });
   });
 
+  // Average dashed line
+  if (avgLine != null && avgLine > 0 && avgLine <= maxVal) {
+    const avgY = PAD_T + chartH - (avgLine / maxVal) * chartH;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(226, 232, 240, 0.75)';
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(PAD_L, avgY);
+    ctx.lineTo(PAD_L + chartW, avgY);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 9px -apple-system, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`avg ${avgLine.toFixed(1)}`, PAD_L + chartW - 2, Math.max(PAD_T + 8, avgY - 4));
+  }
+
   // X labels
   ctx.fillStyle = '#64748b';
   ctx.font = '9px -apple-system, sans-serif';
@@ -1030,10 +1057,6 @@ function renderDailyDetail(monthKey) {
   const trend = dailyCache[monthKey];
   if (!trend) return;
 
-  const now      = new Date();
-  const isCurrent = monthKey === dailyKeyNow();
-  const todayDay  = isCurrent ? String(now.getDate()).padStart(2, '0') : null;
-
   const values  = trend.map(r => Number(r.value) || 0);
   const total   = values.reduce((s, v) => s + v, 0);
   const nonZero = values.filter(v => v > 0);
@@ -1048,10 +1071,31 @@ function renderDailyDetail(monthKey) {
   const avgEl  = $('daily-avg');   if (avgEl)  avgEl.textContent   = fmt(avg, 2);
   const costEl = $('daily-cost');  if (costEl) costEl.textContent  = fmtInt(estCost);
 
-  // Bar chart — today highlighted in amber
+  // Rank non-zero days: Top 7 highest (red/amber) & Top 5 lowest (green)
+  const validDays = trend
+    .map(r => ({ label: r.label, val: Number(r.value) || 0 }))
+    .filter(d => d.val > 0);
+  const byDesc = [...validDays].sort((a, b) => b.val - a.val);
+  const top3RedSet   = new Set(byDesc.slice(0, 3).map(d => d.label));
+  const next4AmbSet  = new Set(byDesc.slice(3, 7).map(d => d.label));
+  const top7HighSet  = new Set([...top3RedSet, ...next4AmbSet]);
+
+  const byAsc = [...validDays].sort((a, b) => a.val - b.val);
+  const low5GreenSet = new Set();
+  for (const d of byAsc) {
+    if (low5GreenSet.size >= 5) break;
+    if (!top7HighSet.has(d.label)) low5GreenSet.add(d.label);
+  }
+
+  // Bar chart — top 3 red, next 4 amber, lowest 5 green, others blue + average line
   const labels = trend.map(r => r.label);
-  const colors = trend.map(r => r.label === todayDay ? '#f59e0b' : '#3b82f6');
-  drawBarChart('daily-chart', labels, [{ label: 'kWh', data: values, color: colors }]);
+  const colors = trend.map(r => {
+    if (top3RedSet.has(r.label))   return '#ef4444';
+    if (next4AmbSet.has(r.label))  return '#f59e0b';
+    if (low5GreenSet.has(r.label)) return '#22c55e';
+    return '#3b82f6';
+  });
+  drawBarChart('daily-chart', labels, [{ label: 'kWh', data: values, color: colors }], avg);
 
   // Day table
   const monthLabel = dailyKeyToDisplay(monthKey).split(' ')[0];
@@ -1059,11 +1103,15 @@ function renderDailyDetail(monthKey) {
   const monIdx     = MON_SHORT.indexOf(mon);
   const DAYS       = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const rows = [...trend].reverse().map(r => {
-    const isToday = r.label === todayDay;
+    const isRed   = top3RedSet.has(r.label);
+    const isAmb   = next4AmbSet.has(r.label);
+    const isLow   = low5GreenSet.has(r.label);
+    const rowCls  = isRed ? ' daily-high-red' : isAmb ? ' daily-high-amber' : isLow ? ' daily-low-green' : '';
+    const badge   = isRed ? '🔴 ' : isAmb ? '🟠 ' : isLow ? '🟢 ' : '';
     const cost    = (Number(r.value) || 0) * tariff;
     const dayName = monIdx >= 0 ? DAYS[new Date(Number(yr), monIdx, Number(r.label)).getDay()] : '';
-    return `<div class="daily-row${isToday ? ' daily-today' : ''}">
-      <span class="daily-day">${isToday ? '▶' : ''} ${monthLabel} ${r.label} <span class="daily-dow">${dayName}</span></span>
+    return `<div class="daily-row${rowCls}">
+      <span class="daily-day">${badge}${monthLabel} ${r.label} <span class="daily-dow">${dayName}</span></span>
       <span class="daily-kwh">${fmt(r.value, 2)} kWh</span>
       <span class="daily-cost-cell">₹${fmtInt(cost)}</span>
     </div>`;
