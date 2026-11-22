@@ -1201,6 +1201,45 @@ function renderRecharge(data) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  MYGATE TAB — Persistent Named Window & Session Tracker
+// ═══════════════════════════════════════════════════════
+const LS_MG_LAST = 'em_mygate_last';
+
+function initMyGateTab() {
+  const panel = $('tab-mygate');
+  if (!panel) return;
+
+  function updateSessionCard() {
+    const raw = localStorage.getItem(LS_MG_LAST);
+    const badge = $('mg-session-badge');
+    const last  = $('mg-session-last');
+    if (raw) {
+      try {
+        const { label, ts } = JSON.parse(raw);
+        if (badge) {
+          badge.textContent = '✅ Session Initialized';
+          badge.classList.add('mg-badge-ok');
+        }
+        if (last) {
+          const dt = new Date(ts);
+          last.textContent = `Last opened: ${label} (${dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${fmtTime(dt)})`;
+        }
+      } catch (_) {}
+    }
+  }
+
+  updateSessionCard();
+
+  panel.querySelectorAll('a[target="mygate_portal"]').forEach(link => {
+    link.addEventListener('click', () => {
+      const label = link.dataset.mgLabel || 'MyGate Portal';
+      localStorage.setItem(LS_MG_LAST, JSON.stringify({ label, ts: Date.now() }));
+      updateSessionCard();
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════
 //  LOCK SCREEN
 // ═══════════════════════════════════════════════════════
 function showLockScreen(msg) {
@@ -1250,6 +1289,7 @@ function init() {
 
   initTabs();
   initFlatBadge();
+  initMyGateTab();
 
   const refreshBtn = $('refresh-btn');
   if (refreshBtn) {

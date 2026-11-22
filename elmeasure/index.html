@@ -52,6 +52,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         Recharge
       </button>
+      <button class="tab" data-tab="mygate" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        MyGate
+      </button>
     </nav>
 
     <!-- ── Main Content ───────────────────────────────── -->
@@ -285,6 +289,129 @@
           <div class="recharge-loading">
             <div class="spinner"></div>
             <span>Loading…</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== MYGATE TAB ===== -->
+      <section id="tab-mygate" class="tab-panel">
+        <div class="section-title" style="margin-top:0">MyGate Portal · Block B-401</div>
+
+        <!-- Primary action cards: Helpdesk & Dues -->
+        <div class="mg-primary-grid">
+          <a class="mg-hero-card mg-hero-helpdesk"
+             href="https://dashboard.mygate.com/home/view/ResidentComplaintsListing"
+             target="mygate_portal"
+             data-mg-label="Helpdesk (My Complaints)">
+            <div class="mg-hero-top">
+              <span class="mg-hero-icon">🎫</span>
+              <span class="mg-hero-arrow">↗</span>
+            </div>
+            <div class="mg-hero-title">Helpdesk &amp; Tickets</div>
+            <div class="mg-hero-sub">Raise or track Unit &amp; Community complaints</div>
+          </a>
+
+          <a class="mg-hero-card mg-hero-dues"
+             href="https://dashboard.mygate.com/home/view/ResidentDues"
+             target="mygate_portal"
+             data-mg-label="My Dues &amp; Invoices">
+            <div class="mg-hero-top">
+              <span class="mg-hero-icon">💳</span>
+              <span class="mg-hero-arrow">↗</span>
+            </div>
+            <div class="mg-hero-title">My Dues &amp; Pay Online</div>
+            <div class="mg-hero-sub">Pending invoices, maintenance &amp; advance</div>
+          </a>
+        </div>
+
+        <!-- Quick links grid -->
+        <div class="section-title">Accounts &amp; Community</div>
+        <div class="mg-links-list">
+          <a class="mg-link-row"
+             href="https://dashboard.mygate.com/home/view/ResidentReceiptsListing"
+             target="mygate_portal"
+             data-mg-label="Receipts Register">
+            <span class="mg-link-icon">🧾</span>
+            <div class="mg-link-info">
+              <div class="mg-link-title">Receipts Register</div>
+              <div class="mg-link-sub">Dues, Prepaid Meter &amp; Advance receipts</div>
+            </div>
+            <span class="mg-link-chevron">↗</span>
+          </a>
+
+          <a class="mg-link-row"
+             href="https://dashboard.mygate.com/home/view/ResidentAccountStatement"
+             target="mygate_portal"
+             data-mg-label="Account Statement">
+            <span class="mg-link-icon">📊</span>
+            <div class="mg-link-info">
+              <div class="mg-link-title">Account &amp; Dues Statement</div>
+              <div class="mg-link-sub">Ledger history &amp; multi-year download</div>
+            </div>
+            <span class="mg-link-chevron">↗</span>
+          </a>
+
+          <a class="mg-link-row"
+             href="https://galaxyapartment.ul.mygate.com/dues/payadvanceonline/621110"
+             target="mygate_portal"
+             data-mg-label="Pay Advance Online">
+            <span class="mg-link-icon">⚡</span>
+            <div class="mg-link-info">
+              <div class="mg-link-title">Pay Advance Online</div>
+              <div class="mg-link-sub">Direct top-up for House #621110 (B-401)</div>
+            </div>
+            <span class="mg-link-chevron">↗</span>
+          </a>
+
+          <a class="mg-link-row"
+             href="https://dashboard.mygate.com/home/view/Documents"
+             target="mygate_portal"
+             data-mg-label="Documents">
+            <span class="mg-link-icon">📁</span>
+            <div class="mg-link-info">
+              <div class="mg-link-title">Society &amp; Flat Documents</div>
+              <div class="mg-link-sub">Circulars, notices &amp; personal files</div>
+            </div>
+            <span class="mg-link-chevron">↗</span>
+          </a>
+
+          <a class="mg-link-row"
+             href="https://dashboard.mygate.com/home/view/DiscussionForum"
+             target="mygate_portal"
+             data-mg-label="Discussions &amp; Polls">
+            <span class="mg-link-icon">💬</span>
+            <div class="mg-link-info">
+              <div class="mg-link-title">Discussions &amp; Opinion Polls</div>
+              <div class="mg-link-sub">Community forum, polls &amp; meetings</div>
+            </div>
+            <span class="mg-link-chevron">↗</span>
+          </a>
+
+          <a class="mg-link-row"
+             href="https://dashboard.mygate.com/home/view/ResidentBookings"
+             target="mygate_portal"
+             data-mg-label="Amenity Bookings">
+            <span class="mg-link-icon">🎾</span>
+            <div class="mg-link-info">
+              <div class="mg-link-title">Amenity Bookings</div>
+              <div class="mg-link-sub">Clubhouse, sports &amp; facility slots</div>
+            </div>
+            <span class="mg-link-chevron">↗</span>
+          </a>
+        </div>
+
+        <!-- Session persistence & first-time login status card -->
+        <div class="mg-session-card" id="mg-session-card">
+          <div class="mg-session-header">
+            <span class="mg-session-badge" id="mg-session-badge">🔐 Persistent Tab Session</span>
+            <span class="mg-session-last" id="mg-session-last"></span>
+          </div>
+          <div class="mg-session-body">
+            All links open in a single persistent <code>mygate_portal</code> tab so your MyGate session stays logged in across launches:
+            <ol class="mg-session-steps">
+              <li><strong>First time only:</strong> Redirects to <code>dashboard.mygate.com/login</code> (<code>tchkreddy@gmail.com</code> + password) → 6-digit OTP on Email/SMS.</li>
+              <li><strong>Automatic persistence:</strong> Once verified, browser cookies &amp; <code>localStorage</code> keep you signed in — every tap above jumps straight into Block B-401 Helpdesk or Dues.</li>
+            </ol>
           </div>
         </div>
       </section>
