@@ -1204,54 +1204,26 @@ function renderRecharge(data) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  MYGATE TAB — Embedded In-Tab View (Strictly Isolated from Flat Change)
+//  MYGATE TAB — Embedded In-Tab Helpdesk View
 // ═══════════════════════════════════════════════════════
-const MG_DEFAULT_URL = 'https://dashboard.mygate.com/home/view/ResidentComplaintsListing';
-let mgCurrentUrl = MG_DEFAULT_URL;
-let mgLoaded     = false;
+const MG_HELPDESK_URL = 'https://dashboard.mygate.com/home/view/ResidentComplaintsListing';
+let mgLoaded = false;
 
-function loadMyGateIframe(url) {
+function loadMyGateIframe() {
   const iframe = $('mg-iframe');
   const loader = $('mg-frame-loader');
-  const popout = $('mg-popout-btn');
-  if (!iframe) return;
-
-  if (url) mgCurrentUrl = url;
-  if (popout) popout.href = mgCurrentUrl;
-
-  if (!mgLoaded || url) {
-    mgLoaded = true;
-    if (loader) loader.style.display = 'flex';
-    iframe.src = mgCurrentUrl;
-  }
+  if (!iframe || mgLoaded) return;
+  mgLoaded = true;
+  if (loader) loader.style.display = 'flex';
+  iframe.src = MG_HELPDESK_URL;
 }
 
 function initMyGateTab() {
-  const pills  = $('mg-pills');
   const iframe = $('mg-iframe');
   const loader = $('mg-frame-loader');
-  const reload = $('mg-reload-btn');
-
   if (iframe) {
     iframe.addEventListener('load', () => {
       if (loader) loader.style.display = 'none';
-    });
-  }
-
-  if (pills) {
-    pills.querySelectorAll('[data-mg-embed]').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const url = chip.dataset.mgEmbed;
-        if (!url) return;
-        pills.querySelectorAll('[data-mg-embed]').forEach(c => c.classList.toggle('active', c === chip));
-        loadMyGateIframe(url);
-      });
-    });
-  }
-
-  if (reload) {
-    reload.addEventListener('click', () => {
-      loadMyGateIframe(mgCurrentUrl);
     });
   }
 }
