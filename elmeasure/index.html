@@ -295,8 +295,11 @@
 
       <!-- ===== MYGATE TAB ===== -->
       <section id="tab-mygate" class="tab-panel mg-tab-panel">
-        <!-- Embedded in-tab Helpdesk iframe container -->
-        <div class="mg-frame-wrap">
+        <!-- Minimal floating toggle: hides MyGate left sidebar & top header by default; tap 🔑 during first-time login if needed -->
+        <button id="mg-fullframe-toggle" class="mg-float-toggle" title="Toggle full frame (use for first-time login)">🔑 Login View</button>
+
+        <!-- Embedded in-tab Helpdesk iframe container (cropped to inner Helpdesk pane) -->
+        <div class="mg-frame-wrap mg-crop-shell" id="mg-frame-wrap">
           <div class="mg-frame-loader" id="mg-frame-loader">
             <div class="spinner"></div>
             <span>Loading Helpdesk…</span>

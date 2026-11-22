@@ -845,10 +845,32 @@ canvas { display: block; width: 100% !important; }
 
 /* ── MyGate Tab (Embedded Helpdesk View) ─────────── */
 .mg-tab-panel.active {
+  position: relative;
   display: flex;
   flex-direction: column;
   padding: 0;
   height: calc(100dvh - 108px);
+}
+.mg-float-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(15, 23, 42, 0.78);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+.mg-float-toggle.active {
+  background: var(--accent-blue);
+  color: #ffffff;
+  border-color: var(--accent-blue);
 }
 .mg-frame-wrap {
   position: relative;
@@ -874,4 +896,12 @@ canvas { display: block; width: 100% !important; }
   height: 100%;
   border: none;
   display: block;
+}
+/* Crop out dashboard.mygate.com's 78px left sidebar & 64px top header so only inner Helpdesk shows */
+.mg-frame-wrap.mg-crop-shell .mg-iframe {
+  position: absolute;
+  top: -64px;
+  left: -78px;
+  width: calc(100% + 78px);
+  height: calc(100% + 64px);
 }

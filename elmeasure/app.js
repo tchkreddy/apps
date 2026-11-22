@@ -1221,9 +1221,20 @@ function loadMyGateIframe() {
 function initMyGateTab() {
   const iframe = $('mg-iframe');
   const loader = $('mg-frame-loader');
+  const toggle = $('mg-fullframe-toggle');
+  const wrap   = $('mg-frame-wrap');
+
   if (iframe) {
     iframe.addEventListener('load', () => {
       if (loader) loader.style.display = 'none';
+    });
+  }
+
+  if (toggle && wrap) {
+    toggle.addEventListener('click', () => {
+      const cropped = wrap.classList.toggle('mg-crop-shell');
+      toggle.textContent = cropped ? '🔑 Login View' : '🎫 Helpdesk Only';
+      toggle.classList.toggle('active', !cropped);
     });
   }
 }
