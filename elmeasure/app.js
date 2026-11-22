@@ -310,6 +310,9 @@ function initTabs() {
     recharge: () => {
       if (!rechargeData) loadRecharge();
     },
+    mygate: () => {
+      loadMyGateIframe();
+    },
   };
 
   document.querySelectorAll('.tab').forEach(tab => {
@@ -1201,42 +1204,56 @@ function renderRecharge(data) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  MYGATE TAB — Persistent Named Window & Session Tracker
+//  MYGATE TAB — Embedded In-Tab View (Strictly Isolated from Flat Change)
 // ═══════════════════════════════════════════════════════
-const LS_MG_LAST = 'em_mygate_last';
+const MG_DEFAULT_URL = 'https://dashboard.mygate.com/home/view/ResidentComplaintsListing';
+let mgCurrentUrl = MG_DEFAULT_URL;
+let mgLoaded     = false;
+
+function loadMyGateIframe(url) {
+  const iframe = $('mg-iframe');
+  const loader = $('mg-frame-loader');
+  const popout = $('mg-popout-btn');
+  if (!iframe) return;
+
+  if (url) mgCurrentUrl = url;
+  if (popout) popout.href = mgCurrentUrl;
+
+  if (!mgLoaded || url) {
+    mgLoaded = true;
+    if (loader) loader.style.display = 'flex';
+    iframe.src = mgCurrentUrl;
+  }
+}
 
 function initMyGateTab() {
-  const panel = $('tab-mygate');
-  if (!panel) return;
+  const pills  = $('mg-pills');
+  const iframe = $('mg-iframe');
+  const loader = $('mg-frame-loader');
+  const reload = $('mg-reload-btn');
 
-  function updateSessionCard() {
-    const raw = localStorage.getItem(LS_MG_LAST);
-    const badge = $('mg-session-badge');
-    const last  = $('mg-session-last');
-    if (raw) {
-      try {
-        const { label, ts } = JSON.parse(raw);
-        if (badge) {
-          badge.textContent = '✅ Session Initialized';
-          badge.classList.add('mg-badge-ok');
-        }
-        if (last) {
-          const dt = new Date(ts);
-          last.textContent = `Last opened: ${label} (${dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${fmtTime(dt)})`;
-        }
-      } catch (_) {}
-    }
+  if (iframe) {
+    iframe.addEventListener('load', () => {
+      if (loader) loader.style.display = 'none';
+    });
   }
 
-  updateSessionCard();
-
-  panel.querySelectorAll('a[target="mygate_portal"]').forEach(link => {
-    link.addEventListener('click', () => {
-      const label = link.dataset.mgLabel || 'MyGate Portal';
-      localStorage.setItem(LS_MG_LAST, JSON.stringify({ label, ts: Date.now() }));
-      updateSessionCard();
+  if (pills) {
+    pills.querySelectorAll('.month-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const url = chip.dataset.mgUrl;
+        if (!url) return;
+        pills.querySelectorAll('.month-chip').forEach(c => c.classList.toggle('active', c === chip));
+        loadMyGateIframe(url);
+      });
     });
-  });
+  }
+
+  if (reload) {
+    reload.addEventListener('click', () => {
+      loadMyGateIframe(mgCurrentUrl);
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════

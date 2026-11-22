@@ -294,125 +294,42 @@
       </section>
 
       <!-- ===== MYGATE TAB ===== -->
-      <section id="tab-mygate" class="tab-panel">
-        <div class="section-title" style="margin-top:0">MyGate Portal · Block B-401</div>
-
-        <!-- Primary action cards: Helpdesk & Dues -->
-        <div class="mg-primary-grid">
-          <a class="mg-hero-card mg-hero-helpdesk"
-             href="https://dashboard.mygate.com/home/view/ResidentComplaintsListing"
-             target="mygate_portal"
-             data-mg-label="Helpdesk (My Complaints)">
-            <div class="mg-hero-top">
-              <span class="mg-hero-icon">🎫</span>
-              <span class="mg-hero-arrow">↗</span>
-            </div>
-            <div class="mg-hero-title">Helpdesk &amp; Tickets</div>
-            <div class="mg-hero-sub">Raise or track Unit &amp; Community complaints</div>
-          </a>
-
-          <a class="mg-hero-card mg-hero-dues"
-             href="https://dashboard.mygate.com/home/view/ResidentDues"
-             target="mygate_portal"
-             data-mg-label="My Dues &amp; Invoices">
-            <div class="mg-hero-top">
-              <span class="mg-hero-icon">💳</span>
-              <span class="mg-hero-arrow">↗</span>
-            </div>
-            <div class="mg-hero-title">My Dues &amp; Pay Online</div>
-            <div class="mg-hero-sub">Pending invoices, maintenance &amp; advance</div>
-          </a>
+      <section id="tab-mygate" class="tab-panel mg-tab-panel">
+        <!-- Sub-navigation pills + minimal status & controls -->
+        <div class="mg-toolbar">
+          <div class="month-scroll mg-pills" id="mg-pills" role="tablist" aria-label="MyGate sections">
+            <button class="month-chip active" data-mg-url="https://dashboard.mygate.com/home/view/ResidentComplaintsListing">🎫 Helpdesk</button>
+            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/ResidentDues">💳 My Dues</button>
+            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/ResidentReceiptsListing">🧾 Receipts</button>
+            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/ResidentAccountStatement">📊 Statement</button>
+            <button class="month-chip" data-mg-url="https://galaxyapartment.ul.mygate.com/dues/payadvanceonline/621110">⚡ Pay Advance</button>
+            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/Documents">📁 Docs</button>
+            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/DiscussionForum">💬 Forum</button>
+            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/ResidentBookings">🎾 Bookings</button>
+          </div>
+          <div class="mg-actions">
+            <span class="mg-session-badge mg-badge-ok" id="mg-session-badge">Session Initialized</span>
+            <button id="mg-reload-btn" class="mg-icon-btn" title="Reload view" aria-label="Reload view">↻</button>
+            <a id="mg-popout-btn"
+               class="mg-icon-btn"
+               href="https://dashboard.mygate.com/home/view/ResidentComplaintsListing"
+               target="mygate_portal"
+               title="Open in full tab"
+               aria-label="Open in full tab">↗</a>
+          </div>
         </div>
 
-        <!-- Quick links grid -->
-        <div class="section-title">Accounts &amp; Community</div>
-        <div class="mg-links-list">
-          <a class="mg-link-row"
-             href="https://dashboard.mygate.com/home/view/ResidentReceiptsListing"
-             target="mygate_portal"
-             data-mg-label="Receipts Register">
-            <span class="mg-link-icon">🧾</span>
-            <div class="mg-link-info">
-              <div class="mg-link-title">Receipts Register</div>
-              <div class="mg-link-sub">Dues, Prepaid Meter &amp; Advance receipts</div>
-            </div>
-            <span class="mg-link-chevron">↗</span>
-          </a>
-
-          <a class="mg-link-row"
-             href="https://dashboard.mygate.com/home/view/ResidentAccountStatement"
-             target="mygate_portal"
-             data-mg-label="Account Statement">
-            <span class="mg-link-icon">📊</span>
-            <div class="mg-link-info">
-              <div class="mg-link-title">Account &amp; Dues Statement</div>
-              <div class="mg-link-sub">Ledger history &amp; multi-year download</div>
-            </div>
-            <span class="mg-link-chevron">↗</span>
-          </a>
-
-          <a class="mg-link-row"
-             href="https://galaxyapartment.ul.mygate.com/dues/payadvanceonline/621110"
-             target="mygate_portal"
-             data-mg-label="Pay Advance Online">
-            <span class="mg-link-icon">⚡</span>
-            <div class="mg-link-info">
-              <div class="mg-link-title">Pay Advance Online</div>
-              <div class="mg-link-sub">Direct top-up for House #621110 (B-401)</div>
-            </div>
-            <span class="mg-link-chevron">↗</span>
-          </a>
-
-          <a class="mg-link-row"
-             href="https://dashboard.mygate.com/home/view/Documents"
-             target="mygate_portal"
-             data-mg-label="Documents">
-            <span class="mg-link-icon">📁</span>
-            <div class="mg-link-info">
-              <div class="mg-link-title">Society &amp; Flat Documents</div>
-              <div class="mg-link-sub">Circulars, notices &amp; personal files</div>
-            </div>
-            <span class="mg-link-chevron">↗</span>
-          </a>
-
-          <a class="mg-link-row"
-             href="https://dashboard.mygate.com/home/view/DiscussionForum"
-             target="mygate_portal"
-             data-mg-label="Discussions &amp; Polls">
-            <span class="mg-link-icon">💬</span>
-            <div class="mg-link-info">
-              <div class="mg-link-title">Discussions &amp; Opinion Polls</div>
-              <div class="mg-link-sub">Community forum, polls &amp; meetings</div>
-            </div>
-            <span class="mg-link-chevron">↗</span>
-          </a>
-
-          <a class="mg-link-row"
-             href="https://dashboard.mygate.com/home/view/ResidentBookings"
-             target="mygate_portal"
-             data-mg-label="Amenity Bookings">
-            <span class="mg-link-icon">🎾</span>
-            <div class="mg-link-info">
-              <div class="mg-link-title">Amenity Bookings</div>
-              <div class="mg-link-sub">Clubhouse, sports &amp; facility slots</div>
-            </div>
-            <span class="mg-link-chevron">↗</span>
-          </a>
-        </div>
-
-        <!-- Session persistence & first-time login status card -->
-        <div class="mg-session-card" id="mg-session-card">
-          <div class="mg-session-header">
-            <span class="mg-session-badge" id="mg-session-badge">🔐 Persistent Tab Session</span>
-            <span class="mg-session-last" id="mg-session-last"></span>
+        <!-- Embedded in-tab iframe container -->
+        <div class="mg-frame-wrap">
+          <div class="mg-frame-loader" id="mg-frame-loader">
+            <div class="spinner"></div>
+            <span>Loading MyGate…</span>
           </div>
-          <div class="mg-session-body">
-            All links open in a single persistent <code>mygate_portal</code> tab so your MyGate session stays logged in across launches:
-            <ol class="mg-session-steps">
-              <li><strong>First time only:</strong> Redirects to <code>dashboard.mygate.com/login</code> (<code>tchkreddy@gmail.com</code> + password) → 6-digit OTP on Email/SMS.</li>
-              <li><strong>Automatic persistence:</strong> Once verified, browser cookies &amp; <code>localStorage</code> keep you signed in — every tap above jumps straight into Block B-401 Helpdesk or Dues.</li>
-            </ol>
-          </div>
+          <iframe id="mg-iframe"
+                  class="mg-iframe"
+                  title="MyGate Portal"
+                  allow="clipboard-read; clipboard-write; payment"
+                  referrerpolicy="strict-origin-when-cross-origin"></iframe>
         </div>
       </section>
 
