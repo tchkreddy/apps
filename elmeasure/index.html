@@ -295,39 +295,39 @@
 
       <!-- ===== MYGATE TAB ===== -->
       <section id="tab-mygate" class="tab-panel mg-tab-panel">
-        <!-- Sub-navigation pills + minimal status & controls -->
+        <!-- Sub-navigation pills: Helpdesk embeds inline; ERP pages open in persistent mygate_portal tab (due to CSP frame-ancestors) -->
         <div class="mg-toolbar">
           <div class="month-scroll mg-pills" id="mg-pills" role="tablist" aria-label="MyGate sections">
-            <button class="month-chip active" data-mg-url="https://dashboard.mygate.com/home/view/ResidentComplaintsListing">🎫 Helpdesk</button>
-            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/ResidentDues">💳 My Dues</button>
-            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/ResidentReceiptsListing">🧾 Receipts</button>
-            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/ResidentAccountStatement">📊 Statement</button>
-            <button class="month-chip" data-mg-url="https://galaxyapartment.ul.mygate.com/dues/payadvanceonline/621110">⚡ Pay Advance</button>
-            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/Documents">📁 Docs</button>
-            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/DiscussionForum">💬 Forum</button>
-            <button class="month-chip" data-mg-url="https://dashboard.mygate.com/home/view/ResidentBookings">🎾 Bookings</button>
+            <button class="month-chip active" data-mg-embed="https://dashboard.mygate.com/home/view/ResidentComplaintsListing">🎫 Helpdesk</button>
+            <a class="month-chip mg-ext-chip" href="https://dashboard.mygate.com/home/view/ResidentDues" target="mygate_portal">💳 My Dues ↗</a>
+            <a class="month-chip mg-ext-chip" href="https://dashboard.mygate.com/home/view/ResidentReceiptsListing" target="mygate_portal">🧾 Receipts ↗</a>
+            <a class="month-chip mg-ext-chip" href="https://dashboard.mygate.com/home/view/ResidentAccountStatement" target="mygate_portal">📊 Statement ↗</a>
+            <a class="month-chip mg-ext-chip" href="https://galaxyapartment.ul.mygate.com/dues/payadvanceonline/621110" target="mygate_portal">⚡ Pay Advance ↗</a>
+            <a class="month-chip mg-ext-chip" href="https://dashboard.mygate.com/home/view/Documents" target="mygate_portal">📁 Docs ↗</a>
+            <a class="month-chip mg-ext-chip" href="https://dashboard.mygate.com/home/view/DiscussionForum" target="mygate_portal">💬 Forum ↗</a>
+            <a class="month-chip mg-ext-chip" href="https://dashboard.mygate.com/home/view/ResidentBookings" target="mygate_portal">🎾 Bookings ↗</a>
           </div>
           <div class="mg-actions">
             <span class="mg-session-badge mg-badge-ok" id="mg-session-badge">Session Initialized</span>
-            <button id="mg-reload-btn" class="mg-icon-btn" title="Reload view" aria-label="Reload view">↻</button>
+            <button id="mg-reload-btn" class="mg-icon-btn" title="Reload Helpdesk" aria-label="Reload Helpdesk">↻</button>
             <a id="mg-popout-btn"
                class="mg-icon-btn"
                href="https://dashboard.mygate.com/home/view/ResidentComplaintsListing"
                target="mygate_portal"
-               title="Open in full tab"
-               aria-label="Open in full tab">↗</a>
+               title="Open Helpdesk in full tab"
+               aria-label="Open Helpdesk in full tab">↗</a>
           </div>
         </div>
 
-        <!-- Embedded in-tab iframe container -->
+        <!-- Embedded in-tab Helpdesk iframe container -->
         <div class="mg-frame-wrap">
           <div class="mg-frame-loader" id="mg-frame-loader">
             <div class="spinner"></div>
-            <span>Loading MyGate…</span>
+            <span>Loading MyGate Helpdesk…</span>
           </div>
           <iframe id="mg-iframe"
                   class="mg-iframe"
-                  title="MyGate Portal"
+                  title="MyGate Helpdesk"
                   allow="clipboard-read; clipboard-write; payment"
                   referrerpolicy="strict-origin-when-cross-origin"></iframe>
         </div>

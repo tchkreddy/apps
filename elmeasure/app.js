@@ -1239,11 +1239,11 @@ function initMyGateTab() {
   }
 
   if (pills) {
-    pills.querySelectorAll('.month-chip').forEach(chip => {
+    pills.querySelectorAll('[data-mg-embed]').forEach(chip => {
       chip.addEventListener('click', () => {
-        const url = chip.dataset.mgUrl;
+        const url = chip.dataset.mgEmbed;
         if (!url) return;
-        pills.querySelectorAll('.month-chip').forEach(c => c.classList.toggle('active', c === chip));
+        pills.querySelectorAll('[data-mg-embed]').forEach(c => c.classList.toggle('active', c === chip));
         loadMyGateIframe(url);
       });
     });

@@ -865,6 +865,12 @@ canvas { display: block; width: 100% !important; }
   flex: 1;
   min-width: 0;
 }
+.mg-ext-chip {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
 .mg-actions {
   display: flex;
   align-items: center;
